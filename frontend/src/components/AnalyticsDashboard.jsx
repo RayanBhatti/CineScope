@@ -18,7 +18,10 @@ const fmtPct0 = (v) => (v==null || isNaN(v) ? "n/a" : `${(v*100).toFixed(0)}%`);
 const fmtCurrency = (v) => (v==null || isNaN(v) ? "n/a" : Intl.NumberFormat(undefined, { style:"currency", currency:"USD", maximumFractionDigits:0 }).format(v));
 const tickProps = { fill: axisStroke, fontSize: 12 };
 
-/* KPI component (inline to keep file self-contained) */
+/* Robust field picking (prevents "Unknown" when API uses different keys) */
+const pick = (...vals) => vals.find(v => v !== undefined && v !== null && v !== "");
+
+/* KPI (inline) */
 function KPI({ label, value, hint }) {
   return (
     <div className="kpi">
@@ -54,7 +57,7 @@ export default function AnalyticsDashboard() {
     let cancelled = false;
     (async () => {
       try {
-        const tasks = [
+        await Promise.all([
           endpoints.summary().then(setSummary),
           endpoints.byDepartment().then(setDept),
           endpoints.byRole().then(setRole),
@@ -62,15 +65,13 @@ export default function AnalyticsDashboard() {
           endpoints.byBusinessTravel().then(setTravel),
           endpoints.byOvertime().then(setOvertime),
           endpoints.byTwoDeptOT().then(setDeptOT),
-
           endpoints.ageHist(12).then(setAgeHist),
           endpoints.incomeHist(25).then(setIncHist),
           endpoints.tenure(40).then(setTenure),
           endpoints.scatter(1200).then(setScatter),
           endpoints.corrs().then(setCorrs),
-          endpoints.genderPie().then(setGender) // ensure correct API method
-        ];
-        await Promise.all(tasks);
+          endpoints.genderPie().then(setGender) // correct API call
+        ]);
         if (cancelled) return;
       } catch (e) {
         if (!cancelled) setErr(String(e?.message || e));
@@ -81,51 +82,81 @@ export default function AnalyticsDashboard() {
 
   // ——— transforms & helpers ———
 
-  const deptByRate = useMemo(() => {
-    const arr = (dept || []).map(d => ({ key: d.k1 || "Unknown", attrition_rate: d.attrition_rate ?? 0 }));
-    return arr.sort((a,b)=> (b.attrition_rate ?? 0) - (a.attrition_rate ?? 0));
-  }, [dept]);
+  // Normalize label + rate for bar charts
+  const normRateRow = (d) => ({
+    key: pick(d?.k1, d?.department, d?.Department, d?.name, d?.key, "Unknown"),
+    attrition_rate: Number(pick(d?.attrition_rate, d?.rate, d?.value, d?.attritionRate, 0)) || 0
+  });
 
-  const roleByRate = useMemo(() => {
-    const arr = (role || []).map(d => ({ key: d.k1 || "Unknown", attrition_rate: d.attrition_rate ?? 0 }));
-    return arr.sort((a,b)=> (b.attrition_rate ?? 0) - (a.attrition_rate ?? 0));
-  }, [role]);
+  const deptByRate = useMemo(() => (dept || []).map(normRateRow)
+    .sort((a,b)=> (b.attrition_rate ?? 0) - (a.attrition_rate ?? 0)), [dept]);
 
-  const eduByRate = useMemo(() => {
-    const arr = (edu || []).map(d => ({ key: d.k1 || "Unknown", attrition_rate: d.attrition_rate ?? 0 }));
-    return arr.sort((a,b)=> (b.attrition_rate ?? 0) - (a.attrition_rate ?? 0));
-  }, [edu]);
+  const roleByRate = useMemo(() => (role || []).map(normRateRow)
+    .sort((a,b)=> (b.attrition_rate ?? 0) - (a.attrition_rate ?? 0)), [role]);
 
-  const travelByRate = useMemo(() => {
-    const arr = (travel || []).map(d => ({ key: d.k1 || "Unknown", attrition_rate: d.attrition_rate ?? 0 }));
-    return arr.sort((a,b)=> (b.attrition_rate ?? 0) - (a.attrition_rate ?? 0));
-  }, [travel]);
+  const eduByRate = useMemo(() => (edu || []).map(normRateRow)
+    .sort((a,b)=> (b.attrition_rate ?? 0) - (a.attrition_rate ?? 0)), [edu]);
 
-  // (kept in case you still use it elsewhere)
+  const travelByRate = useMemo(() => (travel || []).map(normRateRow)
+    .sort((a,b)=> (b.attrition_rate ?? 0) - (a.attrition_rate ?? 0)), [travel]);
+
+  // Department × Overtime pivot (kept if used elsewhere)
   const deptOvertimePivot = useMemo(() => {
     const by = {};
     for (const r of (deptOT || [])) {
-      const k = r.k1 || "Unknown";
-      const ot = r.k2 || "Unknown";
+      const k = pick(r?.k1, r?.department, r?.Department, r?.name, r?.key, "Unknown");
+      const ot = pick(r?.k2, r?.overtime, r?.Overtime, "Unknown");
       by[k] ||= { department: k, Yes: 0, No: 0 };
-      by[k][ot] = r.attrition_rate;
+      by[k][ot] = Number(pick(r?.attrition_rate, r?.rate, r?.value, 0)) || 0;
     }
     return Object.values(by);
   }, [deptOT]);
 
+  // Gender pie
+  const genderPie = useMemo(() => (gender || []).map(g => ({
+    gender: pick(g?.gender, g?.k1, g?.name, "Unknown"),
+    value: Number(pick(g?.count, g?.value, g?.n, 0)) || 0
+  })), [gender]);
+
+  // Age/Income histograms (bin label may be k1|bin|bucket|label)
+  const ageHistNorm = useMemo(() => (ageHist || []).map(d => ({
+    k1: pick(d?.k1, d?.bin, d?.bucket, d?.label, ""),
+    count: Number(pick(d?.count, d?.n, d?.value, 0)) || 0
+  })), [ageHist]);
+
+  const incHistNorm = useMemo(() => (incHist || []).map(d => ({
+    k1: pick(d?.k1, d?.bin, d?.bucket, d?.label, ""),
+    count: Number(pick(d?.count, d?.n, d?.value, 0)) || 0
+  })), [incHist]);
+
+  // Tenure line (x may be k1|bin|bucket|label; y may be attrition_rate|rate|value)
+  const tenureSeries = useMemo(() => (tenure || []).map(d => ({
+    k1: pick(d?.k1, d?.bin, d?.bucket, d?.label, ""),
+    attrition_rate: Number(pick(d?.attrition_rate, d?.rate, d?.value, 0)) || 0
+  })), [tenure]);
+
+  // Scatter: ensure existence
+  const scatterData = useMemo(() => (scatter || []).map(s => ({
+    age: Number(pick(s?.age, s?.k1, s?.x, 0)) || 0,
+    monthly_income: Number(pick(s?.monthly_income, s?.income, s?.y, 0)) || 0,
+    left_flag: Number(pick(s?.left_flag, s?.left, s?.attrition, 0)) || 0
+  })), [scatter]);
+
   // Insights
   const insights = useMemo(() => {
-    const topDept = deptByRate.slice(0,1)[0];
-    const lowDept = deptByRate.slice(-1)[0];
-    const topRole = roleByRate.slice(0,1)[0];
+    const topDept = deptByRate[0];
+    const lowDept = deptByRate[deptByRate.length-1];
+    const topRole = roleByRate[0];
 
-    const incomeCorr = (corrs || []).find(c => c.feature === "monthly_income");
+    const incomeCorr = (corrs || []).find(c => pick(c?.feature, c?.name) === "monthly_income");
+    const corrVal = incomeCorr?.corr ?? incomeCorr?.value ?? null;
+
     const incomeText = (() => {
-      if (!incomeCorr || incomeCorr.corr == null) return "Higher salaries show little direct correlation with attrition in this dataset.";
-      const strength = Math.abs(incomeCorr.corr);
-      const dir = incomeCorr.corr > 0 ? "increase" : "decrease";
+      if (corrVal == null) return "Higher salaries show little direct correlation with attrition in this dataset.";
+      const strength = Math.abs(corrVal);
+      const dir = corrVal > 0 ? "increase" : "decrease";
       const descr = strength >= 0.3 ? "a strong" : strength >= 0.15 ? "a moderate" : "a weak";
-      return `Monthly income shows ${descr} ${dir} in attrition (corr=${incomeCorr.corr.toFixed(2)}).`;
+      return `Monthly income shows ${descr} ${dir} in attrition (corr=${corrVal.toFixed(2)}).`;
     })();
 
     return [
@@ -135,14 +166,6 @@ export default function AnalyticsDashboard() {
       { label: "Income & attrition",              text: incomeText }
     ];
   }, [deptByRate, roleByRate, corrs]);
-
-  // Gender pie data
-  const genderPie = (gender || []).map((g)=>({
-    gender: g.gender || "Unknown",
-    value: g.count || 0
-  }));
-
-  // ——— render ———
 
   return (
     <>
@@ -193,7 +216,7 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
 
-        {/* ===== NEW ROW: Gender Split (left) + Attrition by Department (right) ===== */}
+        {/* ===== Gender Split (left) + Attrition by Department (right) ===== */}
         <div className="grid-two" style={{marginBottom:12}}>
           {/* Gender split */}
           <div className="card">
@@ -230,14 +253,14 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
 
-        {/* ===== Remaining small charts row (keep whatever you had) ===== */}
+        {/* ===== Remaining small charts row ===== */}
         <div className="grid three">
           {/* Age Distribution (bins) */}
           <div className="card">
             <div className="card-head"><h3>Age Distribution (bins)</h3></div>
             <div className="card-body" style={{height:280}}>
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={ageHist}>
+                <AreaChart data={ageHistNorm}>
                   <defs>
                     <linearGradient id="ageGrad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor={palette[2]} stopOpacity="0.9"/>
@@ -259,7 +282,7 @@ export default function AnalyticsDashboard() {
             <div className="card-head"><h3>Attrition vs Tenure (Years at Company)</h3></div>
             <div className="card-body" style={{height:280}}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={tenure}>
+                <LineChart data={tenureSeries}>
                   <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
                   <XAxis dataKey="k1" stroke={axisStroke} tick={tickProps} />
                   <YAxis stroke={axisStroke} tick={tickProps} tickFormatter={fmtPct0} />
@@ -271,12 +294,12 @@ export default function AnalyticsDashboard() {
             </div>
           </div>
 
-          {/* Monthly Income Distribution (bins) — keep if you still use it */}
+          {/* Monthly Income Distribution (bins) */}
           <div className="card">
             <div className="card-head"><h3>Monthly Income Distribution (bins)</h3></div>
             <div className="card-body" style={{height:280}}>
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={incHist}>
+                <AreaChart data={incHistNorm}>
                   <defs>
                     <linearGradient id="incGrad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor={palette[4]} stopOpacity="0.9"/>
@@ -292,8 +315,6 @@ export default function AnalyticsDashboard() {
               </ResponsiveContainer>
             </div>
           </div>
-
-          {/* You can add Gender pie here instead if you remove the top row */}
         </div>
 
         {/* Scatter: Age vs Monthly Income (full width) */}
@@ -312,8 +333,8 @@ export default function AnalyticsDashboard() {
                   cursor={{ fill: "rgba(255,255,255,0.08)" }}
                   formatter={(v, name)=>[name==="monthly_income"?fmtCurrency(v):v, name==="monthly_income"?"Monthly Income":name==="age"?"Age":"Left?"]} />
                 <Legend />
-                <Scatter data={scatter.filter(d=>d.left_flag===1)} name="Left" fill={yesColor} />
-                <Scatter data={scatter.filter(d=>d.left_flag===0)} name="Stayed" fill={noColor} />
+                <Scatter data={scatterData.filter(d=>d.left_flag===1)} name="Left" fill={yesColor} />
+                <Scatter data={scatterData.filter(d=>d.left_flag===0)} name="Stayed" fill={noColor} />
               </ScatterChart>
             </ResponsiveContainer>
           </div>

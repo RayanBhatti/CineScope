@@ -237,62 +237,25 @@ def gender_pie():
 
 #  Attrition vs minimum income line chart
 @app.get("/api/line/attrition_vs_min_income")
-def attrition_vs_min_income(buckets: int = 30):
-    if buckets <= 0:
-        raise HTTPException(status_code=400, detail="buckets must be > 0")
-
-    # Find data range
-    bounds = run_query("SELECT MIN(monthly_income) AS lo, MAX(monthly_income) AS hi FROM hr_employees_v")[0]
-    lo, hi = bounds["lo"], bounds["hi"]
-    if lo is None or hi is None or lo == hi:
-        return []
-
-    # Bucket incomes, compute attrition_rate; expose the *minimum income* in each bucket
+def attrition_vs_min_income():
     sql = """
-    WITH x AS (
-      SELECT width_bucket(monthly_income, :lo, :hi, :buckets) AS bkt,
-             monthly_income,
-             (CASE WHEN attrition='Yes' THEN 1 ELSE 0 END) AS left_flag
-      FROM hr_employees_v
-      WHERE monthly_income IS NOT NULL
-    )
-    SELECT
-      MIN(monthly_income)::int AS min_income,
-      ROUND(AVG(left_flag)::numeric, 4) AS attrition_rate
-    FROM x
-    GROUP BY bkt
-    ORDER BY bkt;
+    SELECT MIN(monthly_income) AS min_income,
+           AVG(CASE WHEN attrition = 'Yes' THEN 1 ELSE 0 END)::float AS attrition_rate
+    FROM hr_employees_v
+    GROUP BY job_role
+    ORDER BY min_income;
     """
-    return run_query(sql, {"lo": lo, "hi": hi, "buckets": buckets})
+    return run_query(sql)
 
 
 # Attrition by employee index (ordered by employee_number if present)
+
 @app.get("/api/line/attrition_by_employee_index")
 def attrition_by_employee_index():
-    """
-    Returns a simple series with x = employee index (ordered by employee_number if present),
-    y = 1 if left, else 0. Useful for a quick 0/1 line plot.
-    """
-    # Prefer employee_number if it exists; otherwise use a stable row_number
-    try:
-      sql = """
-      SELECT employee_number::int AS idx,
-             CASE WHEN attrition='Yes' THEN 1 ELSE 0 END AS left_flag
-      FROM hr_employees_v
-      WHERE employee_number IS NOT NULL
-      ORDER BY employee_number;
-      """
-      rows = run_query(sql)
-      if rows and rows[0].get("idx") is not None:
-          return rows
-    except Exception:
-      pass
-
-    # Fallback: row_number order
     sql = """
-    SELECT
-      row_number() over (order by (select 1))::int AS idx,
-      CASE WHEN attrition='Yes' THEN 1 ELSE 0 END AS left_flag
-    FROM hr_employees_v;
+    SELECT employee_number,
+           CASE WHEN attrition = 'Yes' THEN 1 ELSE 0 END AS attrition_flag
+    FROM hr_employees_v
+    ORDER BY employee_number;
     """
     return run_query(sql)

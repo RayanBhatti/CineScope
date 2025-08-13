@@ -3,7 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CineScope</title>
+    <title>CineScope — HR Analytics v3</title>
+    <script>
+      // Build stamp to verify the right bundle is live in prod:
+      console.log("CINESCOPE_FRONTEND_BUILD", "v3", new Date().toISOString());
+      console.log("VITE_API_BASE (at build):", "%VITE_API_BASE%");
+    </script>
   </head>
   <body>
     <div id="root"></div>

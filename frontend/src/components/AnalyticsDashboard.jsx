@@ -9,7 +9,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   LineChart, Line, AreaChart, Area, ScatterChart, Scatter, ZAxis,
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
-  PieChart, Pie, Cell, Legend
+  PieChart, Pie, Legend
 } from "recharts";
 
 export default function AnalyticsDashboard() {
@@ -49,15 +49,14 @@ export default function AnalyticsDashboard() {
   }, []);
 
   const deptOvertimePivot = useMemo(() => {
-    // pivot to {department, Yes, No} counts or rates
-    const byDept = {};
+    const by = {};
     for (const r of deptOvertime) {
-      const k = r.k1 || "Unknown"; // department
-      const ot = r.k2 || "Unknown"; // over_time
-      byDept[k] ||= { department: k, Yes: 0, No: 0 };
-      byDept[k][ot] = r.attrition_rate; // rate by overtime group (use rate to stack)
+      const k = r.k1 || "Unknown";
+      const ot = r.k2 || "Unknown";
+      by[k] ||= { department: k, Yes: 0, No: 0 };
+      by[k][ot] = r.attrition_rate;
     }
-    return Object.values(byDept);
+    return Object.values(by);
   }, [deptOvertime]);
 
   const corrSorted = useMemo(() => {
@@ -69,17 +68,13 @@ export default function AnalyticsDashboard() {
   if (err) return <pre style={{whiteSpace:"pre-wrap", color:"crimson"}}>{err}</pre>;
 
   return (
-    <div style={{ padding: "1.5rem", maxWidth: 1200, margin: "0 auto" }}>
-      <h1>HR Attrition Analytics (React + FastAPI + Postgres)</h1>
-      <p>Interactive demo using your Neon-backed API.</p>
-
+    <div style={{ padding: "1.5rem" }}>
       {summary && (
         <div style={{ margin: "12px 0", fontWeight: 600 }}>
           Total: {summary.n_total} · Left: {summary.n_left} · Attrition rate: {(summary.attrition_rate*100).toFixed(1)}%
         </div>
       )}
 
-      {/* 1. Attrition by Department (Bar) */}
       <Section title="Attrition by Department">
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={byDept}>
@@ -92,7 +87,6 @@ export default function AnalyticsDashboard() {
         </ResponsiveContainer>
       </Section>
 
-      {/* 2. Attrition by Job Role (Bar) */}
       <Section title="Attrition by Job Role">
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={byRole}>
@@ -105,7 +99,6 @@ export default function AnalyticsDashboard() {
         </ResponsiveContainer>
       </Section>
 
-      {/* 3. Monthly Income Distribution (Area/Histogram) */}
       <Section title="Monthly Income Distribution (bins)">
         <ResponsiveContainer width="100%" height={280}>
           <AreaChart data={incHist}>
@@ -118,7 +111,6 @@ export default function AnalyticsDashboard() {
         </ResponsiveContainer>
       </Section>
 
-      {/* 4. Tenure vs Attrition (Line) */}
       <Section title="Attrition vs Tenure (Years at Company)">
         <ResponsiveContainer width="100%" height={280}>
           <LineChart data={tenure}>
@@ -131,7 +123,6 @@ export default function AnalyticsDashboard() {
         </ResponsiveContainer>
       </Section>
 
-      {/* 5. Department × OverTime (Stacked Bars by rate) */}
       <Section title="Attrition rate by Department × OverTime">
         <ResponsiveContainer width="100%" height={320}>
           <BarChart data={deptOvertimePivot}>
@@ -146,7 +137,6 @@ export default function AnalyticsDashboard() {
         </ResponsiveContainer>
       </Section>
 
-      {/* 6. Scatter: Age vs Monthly Income colored by attrition */}
       <Section title="Age vs Monthly Income (scatter)">
         <ResponsiveContainer width="100%" height={320}>
           <ScatterChart>
@@ -155,7 +145,6 @@ export default function AnalyticsDashboard() {
             <YAxis type="number" dataKey="monthly_income" />
             <ZAxis type="category" dataKey="left_flag" range={[60, 60]} />
             <Tooltip />
-            {/* Split into two series for a visual legend */}
             <Scatter data={scatter.filter(d => d.left_flag === 1)} name="Left" />
             <Scatter data={scatter.filter(d => d.left_flag === 0)} name="Stayed" />
             <Legend />
@@ -163,7 +152,6 @@ export default function AnalyticsDashboard() {
         </ResponsiveContainer>
       </Section>
 
-      {/* 7. Radar: Satisfaction profile by attrition */}
       <Section title="Satisfaction Profile (Radar) — Stayed vs Left">
         <ResponsiveContainer width="100%" height={360}>
           <RadarChart data={radar}>
@@ -179,7 +167,6 @@ export default function AnalyticsDashboard() {
         </ResponsiveContainer>
       </Section>
 
-      {/* 8. Gender split (Pie) */}
       <Section title="Gender Split & Attrition rate (Pie)">
         <ResponsiveContainer width="100%" height={300}>
           <PieChart>
@@ -190,12 +177,10 @@ export default function AnalyticsDashboard() {
         </ResponsiveContainer>
       </Section>
 
-      {/* 9. Correlation table */}
       <Section title="Correlation with Attrition (Yes=1, No=0)">
         <CorrelationTable rows={corrSorted} />
       </Section>
 
-      {/* 10. Box-plot stats per job role (render as range bars for now) */}
       <Section title="Income spread by Job Role (five-number summary)">
         <ResponsiveContainer width="100%" height={330}>
           <BarChart data={boxIncome}>
@@ -203,7 +188,6 @@ export default function AnalyticsDashboard() {
             <XAxis dataKey="job_role" />
             <YAxis />
             <Tooltip />
-            {/* For a quick visual: stack bars to show min→q1→median→q3→max segments */}
             <Bar dataKey="min" stackId="b" />
             <Bar dataKey="q1" stackId="b" />
             <Bar dataKey="median" stackId="b" />
@@ -212,7 +196,7 @@ export default function AnalyticsDashboard() {
             <Legend />
           </BarChart>
         </ResponsiveContainer>
-        <p style={{opacity:.7, fontSize:12}}>We’ll swap this for a proper box/violin plot in the styling pass.</p>
+        <p style={{opacity:.7, fontSize:12}}>We’ll swap for a proper box/violin plot during styling.</p>
       </Section>
     </div>
   );

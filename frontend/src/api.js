@@ -1,13 +1,12 @@
 export const API_BASE = import.meta.env.VITE_API_BASE;
 
-// helper returns JSON or throws with body excerpt (helps debugging)
+// Helper: return JSON or throw readable error with response body excerpt
 async function getJSON(url) {
   const r = await fetch(url);
   const t = await r.text();
   if (!r.ok) throw new Error(`HTTP ${r.status} @ ${url}\n${t.slice(0, 200)}`);
-  try { return JSON.parse(t); } catch (e) {
-    throw new Error(`Invalid JSON from ${url}: ${e.message}\nBody: ${t.slice(0, 200)}`);
-  }
+  if (t.trim().startsWith("<")) throw new Error(`Got HTML from ${url}. Check VITE_API_BASE.`);
+  return JSON.parse(t);
 }
 
 export function getSummary() { return getJSON(`${API_BASE}/api/attrition/summary`); }
@@ -16,7 +15,6 @@ export function getAgeHist(params={buckets:9,min_age:18,max_age:60}) {
   const q = new URLSearchParams(params).toString();
   return getJSON(`${API_BASE}/api/distribution/age?${q}`);
 }
-
 export function getIncomeHist(buckets=20) {
   return getJSON(`${API_BASE}/api/distribution/monthly_income?buckets=${buckets}`);
 }

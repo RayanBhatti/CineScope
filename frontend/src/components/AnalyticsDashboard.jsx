@@ -67,6 +67,22 @@ function KPI({ label, value, hint }) {
   );
 }
 
+/* Custom tooltip for Income per Role (box-like stacked bar) */
+function IncomeTooltip({ active, payload, label }) {
+  if (!active || !payload || !payload.length) return null;
+  const d = payload[0].payload; // we stuffed the original quantiles on each row
+  return (
+    <div style={{ ...tooltipStyle, padding: 10, borderRadius: 10 }}>
+      <div style={{ fontWeight: 800, marginBottom: 6 }}>{label}</div>
+      <div>Max : {fmtCurrency(d.max)}</div>
+      <div>Q3  : {fmtCurrency(d.q3)}</div>
+      <div>Median : {fmtCurrency(d.median)}</div>
+      <div>Q1  : {fmtCurrency(d.q1)}</div>
+      <div>Min : {fmtCurrency(d.min)}</div>
+    </div>
+  );
+}
+
 export default function AnalyticsDashboard() {
   // datasets
   const [summary, setSummary] = useState(null);
@@ -168,18 +184,37 @@ export default function AnalyticsDashboard() {
       .sort((a, b) => a.x - b.x);
   }, [tenure]);
 
-  // Income spread by role (min/q1/median/q3/max) from /api/boxplot/income_by_role
-  const incomeSpreadRole = useMemo(() => {
+  // Income per role — convert to stacked *ranges* so the total height equals `max`
+  const incomeBoxData = useMemo(() => {
     const rows = Array.isArray(boxIncome) ? boxIncome : [];
-    return rows.map(row => ({
-      job_role: row.job_role ?? "Unknown",
-      min:     Number(row.min)    || 0,
-      q1:      Number(row.q1)     || 0,
-      median:  Number(row.median) || 0,
-      q3:      Number(row.q3)     || 0,
-      max:     Number(row.max)    || 0,
-    }));
+    return rows.map(r => {
+      const min = Number(r.min) || 0;
+      const q1 = Number(r.q1) || 0;
+      const median = Number(r.median) || 0;
+      const q3 = Number(r.q3) || 0;
+      const max = Number(r.max) || 0;
+
+      // segments for stacking as ranges
+      const seg_min = Math.max(min, 0);               // from 0 → min
+      const seg_q1  = Math.max(q1 - min, 0);          // min → q1
+      const seg_med = Math.max(median - q1, 0);       // q1 → median
+      const seg_q3  = Math.max(q3 - median, 0);       // median → q3
+      const seg_max = Math.max(max - q3, 0);          // q3 → max
+
+      return {
+        job_role: r.job_role ?? "Unknown",
+        // original quantiles (for tooltip)
+        min, q1, median, q3, max,
+        // stacked segments (plotted)
+        seg_min, seg_q1, seg_med, seg_q3, seg_max
+      };
+    });
   }, [boxIncome]);
+
+  const maxIncome = useMemo(
+    () => incomeBoxData.reduce((m, d) => Math.max(m, d.max || 0), 0),
+    [incomeBoxData]
+  );
 
   // Simple insights row (useful bubbles)
   const insights = useMemo(() => {
@@ -356,30 +391,32 @@ export default function AnalyticsDashboard() {
             </div>
           </div>
 
-          {/* Income per Role (stacked min/Q1/Median/Q3/Max) */}
+          {/* Income per Role (box/whisker as stacked ranges) */}
           <div className="card">
             <div className="card-head"><h3>Income per Role (Min • Q1 • Median • Q3 • Max)</h3></div>
             <div className="card-body" style={{height:280}}>
-              {incomeSpreadRole.length === 0 ? (
+              {incomeBoxData.length === 0 ? (
                 <div className="empty-msg">No income spread data available.</div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={incomeSpreadRole}>
+                  <BarChart data={incomeBoxData}>
                     <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
                     <XAxis dataKey="job_role" stroke={axisStroke} tick={tickProps} />
-                    <YAxis stroke={axisStroke} tick={tickProps} tickFormatter={(v)=>Intl.NumberFormat().format(v)} />
-                    <Tooltip
-                      contentStyle={tooltipStyle}
-                      labelStyle={tooltipLabelStyle}
-                      itemStyle={tooltipItemStyle}
-                      formatter={(v, name)=>[fmtCurrency(v), ({min:"Min", q1:"Q1", median:"Median", q3:"Q3", max:"Max"}[name]||name)]}
+                    <YAxis
+                      stroke={axisStroke}
+                      tick={tickProps}
+                      tickFormatter={(v)=>Intl.NumberFormat().format(v)}
+                      domain={[0, maxIncome]}
                     />
+                    {/* Custom tooltip showing Max→...→Min (flipped order) with the correct quantiles */}
+                    <Tooltip content={<IncomeTooltip />} />
                     <Legend />
-                    <Bar dataKey="min"    stackId="spread" fill={palette[0]} />
-                    <Bar dataKey="q1"     stackId="spread" fill={palette[1]} />
-                    <Bar dataKey="median" stackId="spread" fill={palette[2]} />
-                    <Bar dataKey="q3"     stackId="spread" fill={palette[3]} />
-                    <Bar dataKey="max"    stackId="spread" fill={palette[4]} />
+                    {/* stack *ranges* so total = max */}
+                    <Bar dataKey="seg_min" stackId="spread" name="min"    fill={palette[0]} />
+                    <Bar dataKey="seg_q1"  stackId="spread" name="q1"     fill={palette[1]} />
+                    <Bar dataKey="seg_med" stackId="spread" name="median" fill={palette[2]} />
+                    <Bar dataKey="seg_q3"  stackId="spread" name="q3"     fill={palette[3]} />
+                    <Bar dataKey="seg_max" stackId="spread" name="max"    fill={palette[4]} />
                   </BarChart>
                 </ResponsiveContainer>
               )}

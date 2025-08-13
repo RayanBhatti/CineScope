@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { endpoints } from "../api";
 import ChartCard from "./ChartCard";
 import MetricCard from "./MetricCard";
-import { palette, yesColor, noColor, gridStroke, axisStroke, textColor } from "../theme";
+import { palette, yesColor, noColor, gridStroke, axisStroke, textColor, tooltipBg, tooltipBd } from "../theme";
 
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -11,338 +11,494 @@ import {
   PieChart, Pie, Legend, Cell
 } from "recharts";
 
-/* ---------- local styles for the simple table ---------- */
-const thStyle = { textAlign:"left", padding:"8px 10px", borderBottom:"1px solid rgba(255,255,255,.12)", fontWeight:700 };
-const tdStyle = { textAlign:"left", padding:"8px 10px" };
+/* Utility for readable tooltips */
+const tooltipStyle = { background: tooltipBg, border: `1px solid ${tooltipBd}`, color: textColor };
 
-/* ---------- tiny wrap to give charts consistent padding ---------- */
-function ChartWrap({ children }) {
-  return <div style={{ width:"100%", height:"100%" }}>{children}</div>;
-}
+/* Sort helpers */
+const byAttr = (a,b) => (b.attrition_rate ?? 0) - (a.attrition_rate ?? 0);
+const byCount = (a,b) => (b.n ?? 0) - (a.n ?? 0);
 
 export default function AnalyticsDashboard() {
-  // data
+  // datasets
   const [summary, setSummary] = useState(null);
-  const [byDept, setByDept] = useState([]);
-  const [byRole, setByRole] = useState([]);
+
+  const [dept, setDept] = useState([]);
+  const [role, setRole] = useState([]);
+  const [edu, setEdu] = useState([]);
+  const [marital, setMarital] = useState([]);
+  const [travel, setTravel] = useState([]);
+  const [overtime, setOvertime] = useState([]);
+
+  const [deptOT, setDeptOT] = useState([]);
+
   const [ageHist, setAgeHist] = useState([]);
   const [incHist, setIncHist] = useState([]);
   const [tenure, setTenure] = useState([]);
-  const [deptOvertime, setDeptOvertime] = useState([]);
-  const [corrs, setCorrs] = useState([]);
-  const [boxIncome, setBoxIncome] = useState([]);
   const [scatter, setScatter] = useState([]);
   const [radar, setRadar] = useState([]);
-  const [genderPie, setGenderPie] = useState([]);
+  const [corrs, setCorrs] = useState([]);
+  const [boxIncome, setBoxIncome] = useState([]);
 
-  // ui
-  const [binsAge, setBinsAge] = useState(9);
-  const [binsInc, setBinsInc] = useState(20);
-  const [scatterN, setScatterN] = useState(800);
+  // controls
+  const [binsAge, setBinsAge] = useState(12);
+  const [binsInc, setBinsInc] = useState(25);
+  const [scatterN, setScatterN] = useState(1200);
+
   const [err, setErr] = useState("");
 
-  // initial concurrent load
+  // load everything concurrently
   useEffect(() => {
-    let done = false;
+    let cancelled = false;
     (async () => {
       try {
         const tasks = [
           endpoints.summary().then(setSummary),
-          endpoints.byDept().then(setByDept),
-          endpoints.byRole().then(setByRole),
-          endpoints.ageHist(binsAge, 18, 60).then(setAgeHist),
+
+          endpoints.byDepartment().then(setDept),
+          endpoints.byRole().then(setRole),
+          endpoints.byEducationField().then(setEdu),
+          endpoints.byMaritalStatus().then(setMarital),
+          endpoints.byBusinessTravel().then(setTravel),
+          endpoints.byOvertime().then(setOvertime),
+          endpoints.byTwoDeptOT().then(setDeptOT),
+
+          endpoints.ageHist(binsAge).then(setAgeHist),
           endpoints.incomeHist(binsInc).then(setIncHist),
-          endpoints.tenure(40).then(setTenure),
-          endpoints.byTwo().then(setDeptOvertime),
-          endpoints.corrs().then(setCorrs),
-          endpoints.boxIncome().then(setBoxIncome),
+          endpoints.tenure().then(setTenure),
           endpoints.scatter(scatterN).then(setScatter),
           endpoints.radar().then(setRadar),
-          endpoints.genderPie().then(setGenderPie),
+          endpoints.corrs().then(setCorrs),
+          endpoints.boxIncome().then(setBoxIncome),
         ];
         const res = await Promise.allSettled(tasks);
         const firstErr = res.find(r => r.status === "rejected");
-        if (!done && firstErr) setErr(String(firstErr.reason));
+        if (firstErr && !cancelled) setErr(String(firstErr.reason));
       } catch (e) {
-        if (!done) setErr(String(e));
+        if (!cancelled) setErr(String(e));
       }
     })();
-    return () => { done = true; };
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // initial only
+  }, []);
 
   // reactive controls
-  useEffect(() => { endpoints.ageHist(binsAge, 18, 60).then(setAgeHist).catch(e => setErr(String(e))); }, [binsAge]);
-  useEffect(() => { endpoints.incomeHist(binsInc).then(setIncHist).catch(e => setErr(String(e))); }, [binsInc]);
-  useEffect(() => { endpoints.scatter(scatterN).then(setScatter).catch(e => setErr(String(e))); }, [scatterN]);
+  useEffect(() => { endpoints.ageHist(binsAge).then(setAgeHist).catch(e=>setErr(String(e))); }, [binsAge]);
+  useEffect(() => { endpoints.incomeHist(binsInc).then(setIncHist).catch(e=>setErr(String(e))); }, [binsInc]);
+  useEffect(() => { endpoints.scatter(scatterN).then(setScatter).catch(e=>setErr(String(e))); }, [scatterN]);
 
-  // transforms
+  // derived datasets
+  const deptSorted = useMemo(() => [...dept].sort(byAttr), [dept]);
+  const roleSorted = useMemo(() => [...role].sort(byAttr), [role]);
+  const eduSorted  = useMemo(() => [...edu].sort(byCount), [edu]);
+  const maritalSorted = useMemo(() => [...marital].sort(byCount), [marital]);
+  const travelSorted  = useMemo(() => [...travel].sort(byCount), [travel]);
+  const overtimeSorted= useMemo(() => [...overtime].sort(byCount), [overtime]);
+
   const deptOvertimePivot = useMemo(() => {
     const by = {};
-    for (const r of deptOvertime) {
+    for (const r of deptOT) {
       const k = r.k1 || "Unknown";
       const ot = r.k2 || "Unknown";
       by[k] ||= { department: k, Yes: 0, No: 0 };
-      by[k][ot] = r.attrition_rate; // using rate for a stacked comparison
+      by[k][ot] = r.attrition_rate;
     }
     return Object.values(by);
-  }, [deptOvertime]);
+  }, [deptOT]);
 
-  const corrSorted = useMemo(() => {
-    return [...corrs]
-      .filter(d => d.corr !== null && !Number.isNaN(d.corr))
-      .sort((a,b) => Math.abs(b.corr) - Math.abs(a.corr));
-  }, [corrs]);
+  // insights text (simple but helpful)
+  const insights = useMemo(() => {
+    const topDept = deptSorted[0];
+    const topRole = roleSorted[0];
+    const otYes = overtimeSorted.find(d=>d.key==="Yes");
+    const otNo  = overtimeSorted.find(d=>d.key==="No");
+    const otDelta = otYes && otNo ? (otYes.attrition_rate - otNo.attrition_rate) : null;
+
+    return [
+      topDept ? `Highest attrition rate by department appears in ${topDept.key} (~${(topDept.attrition_rate*100).toFixed(1)}%).` : null,
+      topRole ? `Among roles, ${topRole.key} shows the highest attrition rate (~${(topRole.attrition_rate*100).toFixed(1)}%).` : null,
+      otDelta!=null ? `Overtime associates with a higher attrition rate by about ${(otDelta*100).toFixed(1)} percentage points.` : null,
+      `Tenure curve suggests early-year exits dominate and flatten with longer tenure.`,
+      `Income distribution is skewed toward lower and mid-salary bands, with attrition pockets across bands.`,
+    ].filter(Boolean);
+  }, [deptSorted, roleSorted, overtimeSorted]);
 
   if (err) {
-    return (
-      <pre className="card span-12" style={{ padding:16, whiteSpace:"pre-wrap", color:"#ffb4b4", borderColor:"rgba(255,0,0,.25)" }}>
-        {err}
-      </pre>
-    );
+    return <pre className="card" style={{padding:16, whiteSpace:"pre-wrap", color:"#ffb4b4"}}>{err}</pre>;
   }
 
   return (
     <>
-      {/* KPIs */}
-      <div className="grid">
-        <div className="kpis span-12">
-          <MetricCard label="Employees" value={summary ? summary.n_total : "—"} />
-          <MetricCard label="Left (count)" value={summary ? summary.n_left : "—"} />
-          <MetricCard
-            label="Attrition rate"
-            value={summary ? `${(summary.attrition_rate*100).toFixed(1)}%` : "—"}
-            hint="Company-wide"
-          />
+      <header className="header">
+        <div className="brand">
+          <span className="dot"></span>
+          <h1>HR Attrition Analytics</h1>
         </div>
-      </div>
+        <div className="right">
+          <a className="link" href="https://github.com/RayanBhatti/CineScope" target="_blank" rel="noreferrer">View Source</a>
+        </div>
+      </header>
 
-      {/* Controls */}
       <div className="grid">
-        <div className="card span-12">
-          <div className="card-head">
-            <h3>Dashboard Controls</h3>
-            <div className="controls">
-              <label className="hint">Age bins</label>
-              <input className="input" type="number" min="3" max="20" value={binsAge} onChange={e=>setBinsAge(+e.target.value||9)} />
-              <label className="hint">Income bins</label>
-              <input className="input" type="number" min="5" max="40" value={binsInc} onChange={e=>setBinsInc(+e.target.value||20)} />
-              <label className="hint">Scatter samples</label>
-              <input className="input" type="number" min="200" max="2000" value={scatterN} onChange={e=>setScatterN(+e.target.value||800)} />
+        {/* KPIs */}
+        <div className="card" style={{gridColumn:"1 / -1"}}>
+          <div className="card-head"><h3>Overview</h3></div>
+          <div className="card-body">
+            <div className="kpis">
+              <MetricCard label="Employees" value={summary?.n_total} />
+              <MetricCard label="Left" value={summary?.n_left} />
+              <MetricCard label="Attrition rate" value={summary ? `${(summary.attrition_rate*100).toFixed(1)}%` : "—"} hint="Company-wide" />
             </div>
           </div>
-          <div className="card-body hint">
-            Tune bucket sizes & sample size. Charts update instantly.
+        </div>
+
+        {/* Insights text */}
+        <div className="card" style={{gridColumn:"1 / -1"}}>
+          <div className="card-head"><h3>Key insights from the data</h3></div>
+          <div className="card-body">
+            <ul style={{margin:"6px 0 0 18px"}}>
+              {insights.map((t, i) => <li key={i} className="hint" style={{fontSize:14, color:"#d5def7"}}>{t}</li>)}
+            </ul>
           </div>
         </div>
-      </div>
 
-      {/* Charts */}
-      <div className="grid">
-        {/* Department */}
-        <ChartCard title="Attrition by Department" className="span-6">
-          <ChartWrap>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={byDept}>
-                <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                <XAxis dataKey="key" stroke={axisStroke} />
-                <YAxis stroke={axisStroke} />
-                <Tooltip contentStyle={{ background:"#0f162c", border:"1px solid rgba(255,255,255,.12)", color:textColor }} />
-                <Bar dataKey="attrition_rate">
-                  {byDept.map((_,i)=>(<Cell key={i} fill={palette[i % palette.length]} />))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </ChartWrap>
-        </ChartCard>
+        {/* Controls */}
+        <div className="card">
+          <div className="card-head"><h3>Controls</h3></div>
+          <div className="card-body">
+            <div className="controls">
+              <label className="hint">Age bins</label>
+              <input className="input" type="number" min="5" max="30" value={binsAge} onChange={e=>setBinsAge(+e.target.value||12)} />
+              <label className="hint">Income bins</label>
+              <input className="input" type="number" min="10" max="50" value={binsInc} onChange={e=>setBinsInc(+e.target.value||25)} />
+              <label className="hint">Scatter samples</label>
+              <input className="input" type="number" min="200" max="3000" value={scatterN} onChange={e=>setScatterN(+e.target.value||1200)} />
+            </div>
+          </div>
+        </div>
 
-        {/* Role */}
-        <ChartCard title="Attrition by Job Role" className="span-6">
-          <ChartWrap>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={byRole}>
-                <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                <XAxis dataKey="key" stroke={axisStroke} />
-                <YAxis stroke={axisStroke} />
-                <Tooltip contentStyle={{ background:"#0f162c", border:"1px solid rgba(255,255,255,.12)", color:textColor }} />
-                <Bar dataKey="attrition_rate">
-                  {byRole.map((_,i)=>(<Cell key={i} fill={palette[(i+2) % palette.length]} />))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </ChartWrap>
-        </ChartCard>
+        {/* Department – all departments */}
+        <div className="card">
+          <div className="card-head"><h3>Attrition by Department</h3></div>
+          <div className="card-body">
+            <div style={{width:"100%", height:320}}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={deptSorted}>
+                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                  <XAxis dataKey="key" stroke={axisStroke} />
+                  <YAxis stroke={axisStroke} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Bar dataKey="attrition_rate">
+                    {deptSorted.map((_,i)=>(<Cell key={i} fill={palette[i % palette.length]} />))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+
+        {/* Job role – vertical chart so every role is visible; scroll if tall */}
+        <div className="card">
+          <div className="card-head"><h3>Attrition by Job Role</h3></div>
+          <div className="card-body scroll-y">
+            <div style={{width:"100%", height:480, minHeight:480}}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={roleSorted} layout="vertical" margin={{left:40}}>
+                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" horizontal={true} vertical={false}/>
+                  <XAxis type="number" stroke={axisStroke} />
+                  <YAxis dataKey="key" type="category" stroke={axisStroke} width={180} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Bar dataKey="attrition_rate">
+                    {roleSorted.map((_,i)=>(<Cell key={i} fill={palette[(i+2)%palette.length]} />))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+
+        {/* Education field */}
+        <div className="card">
+          <div className="card-head"><h3>Attrition by Education Field</h3></div>
+          <div className="card-body">
+            <div style={{width:"100%", height:300}}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={eduSorted}>
+                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                  <XAxis dataKey="key" stroke={axisStroke} />
+                  <YAxis stroke={axisStroke} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Bar dataKey="attrition_rate">
+                    {eduSorted.map((_,i)=>(<Cell key={i} fill={palette[(i+4)%palette.length]} />))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+
+        {/* Marital status */}
+        <div className="card">
+          <div className="card-head"><h3>Attrition by Marital Status</h3></div>
+          <div className="card-body">
+            <div style={{width:"100%", height:300}}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={maritalSorted}>
+                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                  <XAxis dataKey="key" stroke={axisStroke} />
+                  <YAxis stroke={axisStroke} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Bar dataKey="attrition_rate">
+                    {maritalSorted.map((_,i)=>(<Cell key={i} fill={palette[(i+5)%palette.length]} />))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+
+        {/* Business travel */}
+        <div className="card">
+          <div className="card-head"><h3>Attrition by Business Travel</h3></div>
+          <div className="card-body">
+            <div style={{width:"100%", height:300}}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={travelSorted}>
+                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                  <XAxis dataKey="key" stroke={axisStroke} />
+                  <YAxis stroke={axisStroke} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Bar dataKey="attrition_rate">
+                    {travelSorted.map((_,i)=>(<Cell key={i} fill={palette[(i+6)%palette.length]} />))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+
+        {/* Overtime yes/no */}
+        <div className="card">
+          <div className="card-head"><h3>Overtime vs Attrition</h3></div>
+          <div className="card-body">
+            <div style={{width:"100%", height:280}}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={overtimeSorted}>
+                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                  <XAxis dataKey="key" stroke={axisStroke} />
+                  <YAxis stroke={axisStroke} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Bar dataKey="attrition_rate">
+                    {overtimeSorted.map((r,i)=>{
+                      const c = r.key==="Yes" ? yesColor : noColor;
+                      return <Cell key={i} fill={c} />
+                    })}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+
+        {/* Department × Overtime stacked */}
+        <div className="card">
+          <div className="card-head"><h3>Attrition rate by Department × Overtime</h3></div>
+          <div className="card-body">
+            <div style={{width:"100%", height:330}}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={deptOvertimePivot}>
+                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                  <XAxis dataKey="department" stroke={axisStroke} />
+                  <YAxis stroke={axisStroke} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Legend />
+                  <Bar dataKey="Yes" stackId="a" fill={yesColor} />
+                  <Bar dataKey="No"  stackId="a" fill={noColor} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+
+        {/* Age histogram */}
+        <div className="card">
+          <div className="card-head"><h3>Age Distribution (bins)</h3></div>
+          <div className="card-body">
+            <div style={{width:"100%", height:280}}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={ageHist}>
+                  <defs>
+                    <linearGradient id="ageGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={palette[0]} stopOpacity="0.9"/>
+                      <stop offset="100%" stopColor={palette[0]} stopOpacity="0.15"/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                  <XAxis dataKey="bucket" stroke={axisStroke} />
+                  <YAxis stroke={axisStroke} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Area dataKey="n" fill="url(#ageGrad)" stroke={palette[0]} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
 
         {/* Income histogram */}
-        <ChartCard title="Monthly Income Distribution (bins)" className="span-6" right={<span className="legend"><span className="sw" style={{background:palette[0]}}></span>Count</span>}>
-          <ChartWrap>
-            <ResponsiveContainer width="100%" height={280}>
-              <AreaChart data={incHist}>
-                <defs>
-                  <linearGradient id="incGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={palette[0]} stopOpacity="0.9"/>
-                    <stop offset="100%" stopColor={palette[0]} stopOpacity="0.15"/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                <XAxis dataKey="bucket" stroke={axisStroke} />
-                <YAxis stroke={axisStroke} />
-                <Tooltip contentStyle={{ background:"#0f162c", border:"1px solid rgba(255,255,255,.12)", color:textColor }} />
-                <Area dataKey="n" fill="url(#incGrad)" stroke={palette[0]} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </ChartWrap>
-        </ChartCard>
-
-        {/* Tenure line */}
-        <ChartCard title="Attrition vs Tenure (Years at Company)" className="span-6">
-          <ChartWrap>
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={tenure}>
-                <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                <XAxis dataKey="years_at_company" stroke={axisStroke} />
-                <YAxis stroke={axisStroke} />
-                <Tooltip contentStyle={{ background:"#0f162c", border:"1px solid rgba(255,255,255,.12)", color:textColor }} />
-                <Line dataKey="attrition_rate" dot={false} stroke={palette[5]} strokeWidth={2.2} />
-              </LineChart>
-            </ResponsiveContainer>
-          </ChartWrap>
-        </ChartCard>
-
-        {/* Dept × Overtime (stacked rate) */}
-        <ChartCard title="Attrition rate by Department × Overtime" className="span-8" right={
-          <div className="legend">
-            <span className="sw" style={{background:yesColor}}></span>Overtime: Yes
-            <span className="sw" style={{background:noColor}}></span>Overtime: No
+        <div className="card">
+          <div className="card-head"><h3>Monthly Income Distribution (bins)</h3></div>
+          <div className="card-body">
+            <div style={{width:"100%", height:280}}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={incHist}>
+                  <defs>
+                    <linearGradient id="incGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={palette[5]} stopOpacity="0.9"/>
+                      <stop offset="100%" stopColor={palette[5]} stopOpacity="0.15"/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                  <XAxis dataKey="bucket" stroke={axisStroke} />
+                  <YAxis stroke={axisStroke} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Area dataKey="n" fill="url(#incGrad)" stroke={palette[5]} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           </div>
-        }>
-          <ChartWrap>
-            <ResponsiveContainer width="100%" height={340}>
-              <BarChart data={deptOvertimePivot}>
-                <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                <XAxis dataKey="department" stroke={axisStroke} />
-                <YAxis stroke={axisStroke} />
-                <Tooltip contentStyle={{ background:"#0f162c", border:"1px solid rgba(255,255,255,.12)", color:textColor }} />
-                <Legend />
-                <Bar dataKey="Yes" stackId="ot" fill={yesColor} />
-                <Bar dataKey="No"  stackId="ot" fill={noColor} />
-              </BarChart>
-            </ResponsiveContainer>
-          </ChartWrap>
-        </ChartCard>
+        </div>
+
+        {/* Tenure curve */}
+        <div className="card">
+          <div className="card-head"><h3>Attrition vs Tenure (Years at Company)</h3></div>
+          <div className="card-body">
+            <div style={{width:"100%", height:280}}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={tenure}>
+                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                  <XAxis dataKey="years_at_company" stroke={axisStroke} />
+                  <YAxis stroke={axisStroke} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Line dataKey="attrition_rate" dot={false} stroke={palette[6]} strokeWidth={2.2} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
 
         {/* Gender pie */}
-        <ChartCard title="Gender Split" className="span-4">
-          <ChartWrap>
-            <ResponsiveContainer width="100%" height={340}>
-              <PieChart>
-                <Tooltip contentStyle={{ background:"#0f162c", border:"1px solid rgba(255,255,255,.12)", color:textColor }} />
-                <Legend />
-                <Pie data={genderPie} dataKey="n" nameKey="gender" outerRadius={120} label>
-                  {genderPie.map((_,i)=>(<Cell key={i} fill={palette[i % palette.length]} />))}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
-          </ChartWrap>
-        </ChartCard>
+        <div className="card">
+          <div className="card-head"><h3>Gender Split</h3></div>
+          <div className="card-body">
+            <div style={{width:"100%", height:320}}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Legend />
+                  <Pie dataKey="n" nameKey="gender" data={summary ? undefined : []} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
 
         {/* Scatter */}
-        <ChartCard title="Age vs Monthly Income (colored by attrition)" className="span-8">
-          <ChartWrap>
-            <ResponsiveContainer width="100%" height={360}>
-              <ScatterChart>
-                <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                <XAxis type="number" dataKey="age" stroke={axisStroke} />
-                <YAxis type="number" dataKey="monthly_income" stroke={axisStroke} />
-                <ZAxis type="category" dataKey="left_flag" range={[80,80]} />
-                <Tooltip
-                  contentStyle={{ background:"#0f162c", border:"1px solid rgba(255,255,255,.12)", color:textColor }}
-                  formatter={(v, name) => [v, name === "monthly_income" ? "Monthly Income" : name === "age" ? "Age" : "Left?"]}
-                />
-                <Legend />
-                <Scatter data={scatter.filter(d => d.left_flag === 1)} name="Left"   fill={yesColor} />
-                <Scatter data={scatter.filter(d => d.left_flag === 0)} name="Stayed" fill={noColor} />
-              </ScatterChart>
-            </ResponsiveContainer>
-          </ChartWrap>
-        </ChartCard>
+        <div className="card" style={{gridColumn:"1 / -1"}}>
+          <div className="card-head"><h3>Age vs Monthly Income (colored by attrition)</h3></div>
+          <div className="card-body">
+            <div style={{width:"100%", height:420}}>
+              <ResponsiveContainer width="100%" height="100%">
+                <ScatterChart>
+                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                  <XAxis type="number" dataKey="age" stroke={axisStroke} />
+                  <YAxis type="number" dataKey="monthly_income" stroke={axisStroke} />
+                  <ZAxis type="category" dataKey="left_flag" range={[70,70]} />
+                  <Tooltip contentStyle={tooltipStyle}
+                    formatter={(v, name)=>[v, name==="monthly_income"?"Monthly Income":name==="age"?"Age":"Left?"]} />
+                  <Legend />
+                  <Scatter data={scatter.filter(d=>d.left_flag===1)} name="Left" fill={yesColor} />
+                  <Scatter data={scatter.filter(d=>d.left_flag===0)} name="Stayed" fill={noColor} />
+                </ScatterChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
 
-        {/* Radar */}
-        <ChartCard title="Satisfaction Profile — Stayed vs Left" className="span-4">
-          <ChartWrap>
-            <ResponsiveContainer width="100%" height={360}>
-              <RadarChart data={radar}>
-                <PolarGrid stroke={gridStroke} />
-                <PolarAngleAxis dataKey="group_name" stroke={axisStroke} />
-                <PolarRadiusAxis stroke={axisStroke} />
-                <Radar name="Environment" dataKey="environment" stroke={palette[1]} fill={palette[1]} fillOpacity={0.25} />
-                <Radar name="Job"         dataKey="job"         stroke={palette[2]} fill={palette[2]} fillOpacity={0.25} />
-                <Radar name="Relation"    dataKey="relationship"stroke={palette[3]} fill={palette[3]} fillOpacity={0.25} />
-                <Radar name="Work/Life"   dataKey="work_life"   stroke={palette[4]} fill={palette[4]} fillOpacity={0.25} />
-                <Legend />
-              </RadarChart>
-            </ResponsiveContainer>
-          </ChartWrap>
-        </ChartCard>
-
-        {/* Correlations */}
-        <ChartCard title="Top correlations with Attrition (Yes=1, No=0)" className="span-6">
-          <div style={{ overflowX:"auto" }}>
-            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:14 }}>
+        {/* Correlations table */}
+        <div className="card">
+          <div className="card-head"><h3>Correlation with Attrition (Yes=1, No=0)</h3></div>
+          <div className="card-body scroll-x">
+            <table className="table">
               <thead>
-                <tr>
-                  <th style={thStyle}>Feature</th>
-                  <th style={thStyle}>Correlation</th>
-                </tr>
+                <tr><th className="th">Feature</th><th className="th">Correlation</th></tr>
               </thead>
               <tbody>
-                {corrSorted.map((r)=>(
-                  <tr key={r.feature} style={{ borderBottom:"1px solid rgba(255,255,255,.06)" }}>
-                    <td style={tdStyle}>{r.feature}</td>
-                    <td style={tdStyle}>
-                      <span style={{ color: (r.corr ?? 0)>0 ? yesColor : noColor, fontWeight:700 }}>
-                        {r.corr?.toFixed(3) ?? "n/a"}
-                      </span>
+                {[...corrs].sort((a,b)=>Math.abs(b.corr||0)-Math.abs(a.corr||0)).map(r=>(
+                  <tr key={r.feature}>
+                    <td className="td">{r.feature}</td>
+                    <td className="td" style={{fontWeight:700, color:(r.corr??0)>0?yesColor:noColor}}>
+                      {r.corr?.toFixed(3) ?? "n/a"}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <p className="hint" style={{ marginTop:8 }}>
-              Positive = more likely to leave as the feature increases; Negative = less likely.
+            <p className="hint" style={{marginTop:8}}>
+              Positive value means higher feature values associate with leaving; negative means the opposite.
             </p>
           </div>
-        </ChartCard>
+        </div>
 
-        {/* Income five-number summary — visualized as stacked segments */}
-        <ChartCard title="Income spread by Job Role (five-number summary)" className="span-6">
-          <ChartWrap>
-            <ResponsiveContainer width="100%" height={330}>
-              <BarChart data={boxIncome}>
-                <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                <XAxis dataKey="job_role" stroke={axisStroke} />
-                <YAxis stroke={axisStroke} />
-                <Tooltip contentStyle={{ background:"#0f162c", border:"1px solid rgba(255,255,255,.12)", color:textColor }}
-                  formatter={(v, name) => {
-                    const labels = { min:"Min", q1:"Q1", median:"Median", q3:"Q3", max:"Max" };
-                    return [v, labels[name] || name];
-                  }}
-                />
-                <Legend />
-                {/* Stack to depict cumulative spread; not a true box, but intuitive */}
-                <Bar dataKey="min"    stackId="spread" fill={palette[0]} />
-                <Bar dataKey="q1"     stackId="spread" fill={palette[1]} />
-                <Bar dataKey="median" stackId="spread" fill={palette[2]} />
-                <Bar dataKey="q3"     stackId="spread" fill={palette[3]} />
-                <Bar dataKey="max"    stackId="spread" fill={palette[4]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </ChartWrap>
-          <p className="hint" style={{ marginTop:8, marginBottom:0 }}>
-            We’ll swap this for a true box/violin plot in a later pass; this conveys spread segments now.
-          </p>
-        </ChartCard>
+        {/* Income five-number summary (stacked to indicate spread) */}
+        <div className="card">
+          <div className="card-head"><h3>Income spread by Job Role</h3></div>
+          <div className="card-body">
+            <div style={{width:"100%", height:330}}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={boxIncome}>
+                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                  <XAxis dataKey="job_role" stroke={axisStroke} />
+                  <YAxis stroke={axisStroke} />
+                  <Tooltip contentStyle={tooltipStyle}
+                    formatter={(v, name)=>[v, ({min:"Min",q1:"Q1",median:"Median",q3:"Q3",max:"Max"}[name]||name)]} />
+                  <Legend />
+                  <Bar dataKey="min"    stackId="spread" fill={palette[0]} />
+                  <Bar dataKey="q1"     stackId="spread" fill={palette[1]} />
+                  <Bar dataKey="median" stackId="spread" fill={palette[2]} />
+                  <Bar dataKey="q3"     stackId="spread" fill={palette[3]} />
+                  <Bar dataKey="max"    stackId="spread" fill={palette[4]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <p className="hint" style={{marginTop:8}}>This is a compact spread view. We can switch to a true box/violin later.</p>
+          </div>
+        </div>
+
+        {/* Radar */}
+        <div className="card">
+          <div className="card-head"><h3>Satisfaction Profile — Stayed vs Left</h3></div>
+          <div className="card-body">
+            <div style={{width:"100%", height:360}}>
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart data={radar}>
+                  <PolarGrid stroke={gridStroke} />
+                  <PolarAngleAxis dataKey="group_name" stroke={axisStroke} />
+                  <PolarRadiusAxis stroke={axisStroke} />
+                  <Radar name="Environment" dataKey="environment" stroke={palette[1]} fill={palette[1]} fillOpacity={0.25} />
+                  <Radar name="Job"         dataKey="job"         stroke={palette[2]} fill={palette[2]} fillOpacity={0.25} />
+                  <Radar name="Relation"    dataKey="relationship"stroke={palette[3]} fill={palette[3]} fillOpacity={0.25} />
+                  <Radar name="Work/Life"   dataKey="work_life"   stroke={palette[4]} fill={palette[4]} fillOpacity={0.25} />
+                  <Legend />
+                </RadarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+
       </div>
+
+      <footer className="footer">
+        API: {import.meta.env.VITE_API_BASE}
+      </footer>
     </>
   );
 }

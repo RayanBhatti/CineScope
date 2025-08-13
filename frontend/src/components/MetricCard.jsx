@@ -1,9 +1,11 @@
-export default function MetricCard({ label, value, hint }) {
+export default function ChartCard({ title, right, children }) {
   return (
-    <div className="kpi">
-      <h4>{label}</h4>
-      <div className="val">{value}</div>
-      {hint ? <div className="trend">{hint}</div> : null}
+    <div className="card">
+      <div className="card-head">
+        <h3>{title}</h3>
+        <div className="controls">{right}</div>
+      </div>
+      <div className="card-body">{children}</div>
     </div>
   );
 }

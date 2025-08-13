@@ -4,6 +4,9 @@ CineScope is a full-stack, data-driven analytics application built using **React
 
 ## [Live Demo →](https://cine-scope-azure.vercel.app/)
 
+<img width="2529" height="1216" alt="image" src="https://github.com/user-attachments/assets/29bc95e7-56fc-4ae0-9ea2-54496ce2cc77" />
+
+
 ## About the Dataset
 
 Uncover the factors that lead to employee attrition and explore important questions such as ‘show me a breakdown of distance from home by job role and attrition’ or ‘compare average monthly income by education and attrition’. This is a fictional data set created by IBM data scientists.

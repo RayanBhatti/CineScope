@@ -21,12 +21,3 @@ jobs:
           echo "Pinging $URL ..."
           curl -fsS --connect-timeout 10 --max-time 20 --retry 5 --retry-delay 5 "$URL"
           echo "OK"
-
-      # (optional) warm a couple of real data endpoints
-      - name: Warm key API routes
-        run: |
-          BASE="${{ secrets.API_BASE }}"
-          if [ -n "$BASE" ]; then
-            curl -fsS "$BASE/api/attrition/summary"  >/dev/null
-            curl -fsS "$BASE/api/attrition/by?dim=department" >/dev/null
-          fi

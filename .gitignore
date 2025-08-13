@@ -1,0 +1,71 @@
+# ----------------
+# Python / FastAPI
+# ----------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+.eggs/
+.Python
+env/
+.venv/
+venv/
+ENV/
+build/
+dist/
+*.log
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Database / Cache files
+*.sqlite3
+*.db
+*.db-journal
+
+# Coverage / Testing
+.coverage
+coverage.xml
+.pytest_cache/
+nosetests.xml
+htmlcov/
+
+# IDEs / Editors
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# ----------------
+# Node / Frontend
+# ----------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+.pnpm-debug.log
+
+# Vite / React build output
+frontend/dist/
+frontend/.vite/
+
+# ----------------
+# OS Specific
+# ----------------
+.DS_Store
+Thumbs.db
+
+# ----------------
+# Misc
+# ----------------
+*.tmp
+*.bak
+*.swp
+*.swo

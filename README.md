@@ -16,14 +16,13 @@ Uncover the factors that lead to employee attrition and explore important questi
   - **Frontend**: React (with Vite for bundling and development speed).
   - **Backend**: FastAPI serving RESTful API endpoints.
   - **Database**: PostgreSQL hosted on Neon for persistent data storage.
-- **Interactive Data Visualization**:
+- **Data Visualization**:
   - Multiple chart types including bar charts, pie charts, scatter plots, histograms, and line graphs.
-  - Real-time interaction with tooltips, filters, and legends.
 - **Dynamic API Integration**:
   - Backend endpoints provide aggregated and filtered dataset results.
   - Frontend consumes API data for live visual updates.
 - **Responsive UI**:
-  - Designed for usability on desktop, tablet, and mobile devices.
+  - Designed for usability on desktop and tablet
 - **Deployment**:
   - Frontend deployed on Vercel.
   - Backend deployed on Render.
@@ -72,16 +71,6 @@ Uncover the factors that lead to employee attrition and explore important questi
    - On pushing to the GitHub repository, Vercel automatically builds and deploys the frontend.
    - Render deploys the backend on commit or manual trigger.
    - The frontend fetches live data from the deployed backend using CORS-enabled endpoints.
-
----
-
-## API Endpoints
-
-Example backend routes:
-- `GET /api/attrition/summary` - Returns overall summary statistics on attrition.
-- `GET /api/distribution/age` - Returns bucketed age distribution with attrition rates.
-- `GET /api/distribution/gender` - Returns gender breakdowns.
-- `GET /api/distribution/department` - Returns department-specific attrition analysis.
 
 ---
 

@@ -1,19 +1,22 @@
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Literal, List
-import os
+import os, re
 
 from .db import run_query
 
 app = FastAPI(title="CineScope HR Analytics API")
 
-# ---- CORS (configure ALLOWED_ORIGINS on Render) ----------------------------
-allowed = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+allowed = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+allowed_regex = os.getenv("ALLOWED_ORIGIN_REGEX")  # e.g. ^https://.*\.vercel\.app$
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in allowed if o.strip()],
+    allow_origins=allowed if not allowed_regex else [],   # exact origins list
+    allow_origin_regex=allowed_regex,                     # OR one regex
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=False,  # set True only if you actually use cookies/auth
 )
 
 #  Health

@@ -16,7 +16,13 @@ app.add_middleware(
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    try:
+        # lightweight DB ping
+        row = run_query("SELECT 1 AS ok;")[0]
+        return {"status": "ok", "db": row["ok"]}
+    except Exception as e:
+        return {"status": "degraded", "error": str(e)}
+
 
 @app.get("/api/attrition/summary")
 def attrition_summary():

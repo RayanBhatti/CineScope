@@ -96,8 +96,8 @@ Example backend routes:
 2. **Set up the backend**:
    ```bash
    cd backend
-   pip install -r requirements.txt
-   uvicorn app.main:app --reload
+   pip install -r app/requirements.txt
+   uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
    ```
 
 3. **Set up the frontend**:

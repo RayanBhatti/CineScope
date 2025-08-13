@@ -18,21 +18,30 @@ const fmtPct0 = (v) => (v==null || isNaN(v) ? "n/a" : `${(v*100).toFixed(0)}%`);
 const fmtCurrency = (v) => (v==null || isNaN(v) ? "n/a" : Intl.NumberFormat(undefined, { style:"currency", currency:"USD", maximumFractionDigits:0 }).format(v));
 const tickProps = { fill: axisStroke, fontSize: 12 };
 
-/* Robust field picking (prevents "Unknown" when API uses different keys) */
+/* Robust field picking to avoid "Unknown" */
 const pick = (...vals) => vals.find(v => v !== undefined && v !== null && v !== "");
 
-/* Tiny toggleable tooltip */
-function InfoTip({ text }) {
+/* Nicer, toggleable info tooltip with custom SVG icon */
+function InfoTip({ children }) {
   const [open, setOpen] = useState(false);
   return (
     <span className="infotip">
-      <button className="infotip-btn" aria-label="How attrition is calculated"
-        onClick={() => setOpen(v => !v)}>
-        ⓘ
+      <button className="infotip-btn" aria-label="How attrition is calculated" onClick={() => setOpen(v => !v)}>
+        {/* clean info-circle SVG */}
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2" />
+          <circle cx="12" cy="8" r="1.6" fill="currentColor" />
+          <path d="M12 11v7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
       </button>
       {open && (
         <div className="infotip-pop">
-          {text}
+          <div className="infotip-title">How attrition is calculated</div>
+          <div className="infotip-body">
+            Attrition rate = <b>count(Attrition = “Yes”)</b> ÷ <b>total employees</b>.<br/>
+            Example: <b>0.16 ≈ 16%</b> of employees left.
+          </div>
+          <div className="infotip-arrow" />
         </div>
       )}
     </span>
@@ -135,9 +144,9 @@ export default function AnalyticsDashboard() {
     count: Number(pick(d?.count, d?.n, d?.value, 0)) || 0
   })), [incHist]);
 
-  // Tenure line
+  // Tenure line — force numeric axis & whole-year ticks
   const tenureSeries = useMemo(() => (tenure || []).map(d => ({
-    k1: pick(d?.k1, d?.bin, d?.bucket, d?.label, ""),
+    k1: Number(pick(d?.k1, d?.bin, d?.bucket, d?.label, 0)) || 0,
     attrition_rate: Number(pick(d?.attrition_rate, d?.rate, d?.value, 0)) || 0
   })), [tenure]);
 
@@ -179,13 +188,9 @@ export default function AnalyticsDashboard() {
         <header className="header">
           <h1 className="title">CineScope Dashboard</h1>
           <p className="subtitle">
-            HR ATTRITION ANALYTICS{" "}
-            <InfoTip text={
-              <span>
-                Attrition rate = <strong>count(Attrition = "Yes")</strong> ÷ <strong>total employees</strong>.
-                For example, 0.16 ≈ 16% of employees left.
-              </span>
-            } />
+            HR ATTRITION ANALYTICS <InfoTip>
+              {null}
+            </InfoTip>
           </p>
 
           {/* View Source Code button with GitHub logo */}
@@ -211,17 +216,18 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
 
-        {/* Key Insights */}
+        {/* Key Insights — now row of bubbles */}
         <div className="card" style={{ marginBottom: 14 }}>
           <div className="card-head"><h3>Key Insights</h3></div>
           <div className="card-body">
-            <ul style={{ listStyle: "none", paddingLeft: 0, margin: 0 }}>
+            <div className="insights-row">
               {insights.map((ins, i) => (
-                <li key={i} style={{ marginBottom: "0.5rem" }}>
-                  <strong>{ins.label}:</strong> {ins.text}
-                </li>
+                <div key={i} className="insight-bubble">
+                  <div className="insight-label">{ins.label}</div>
+                  <div className="insight-text">{ins.text}</div>
+                </div>
               ))}
-            </ul>
+            </div>
           </div>
         </div>
 
@@ -304,14 +310,22 @@ export default function AnalyticsDashboard() {
             </div>
           </div>
 
-          {/* Attrition vs Tenure */}
+          {/* Attrition vs Tenure — now with numeric, whole-year ticks */}
           <div className="card">
             <div className="card-head"><h3>Attrition vs Tenure (Years at Company)</h3></div>
             <div className="card-body" style={{height:280}}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={tenureSeries}>
                   <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                  <XAxis dataKey="k1" stroke={axisStroke} tick={tickProps} />
+                  <XAxis
+                    type="number"
+                    dataKey="k1"
+                    stroke={axisStroke}
+                    tick={tickProps}
+                    domain={[0, 'dataMax']}
+                    allowDecimals={false}
+                    tickCount={10}
+                  />
                   <YAxis stroke={axisStroke} tick={tickProps} tickFormatter={fmtPct0} />
                   <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} formatter={(v)=>fmtPct(v)} />
                   <Legend />

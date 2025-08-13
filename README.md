@@ -57,7 +57,7 @@ Uncover the factors that lead to employee attrition and explore important questi
    - Tables are optimized for queries by the FastAPI backend.
 
 2. **Backend Processing**:
-   - FastAPI endpoints are created to query and aggregate the data.
+   - FastAPI endpoints are created to query and aggregate the data concurrently.
    - Example: `/api/attrition/summary` aggregates data on employee attrition rates, while `/api/distribution/age` groups employee ages into buckets.
    - SQLAlchemy is used to build and execute queries securely with parameter binding.
    - API responses are returned in JSON format for the frontend.

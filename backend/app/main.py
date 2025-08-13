@@ -1,23 +1,30 @@
 # backend/app/main.py
+import os
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from .db import run_query  # uses DATABASE_URL from env
+from fastapi.responses import RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-# In prod, set to your Vercel domain instead of "*"
+allowed = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+@app.get("/", include_in_schema=False)
+def root():
+    return RedirectResponse(url="/docs")
+
 @app.get("/api/health")
 def health():
     try:
-        # lightweight DB ping
+        from .db import run_query
         row = run_query("SELECT 1 AS ok;")[0]
         return {"status": "ok", "db": row["ok"]}
     except Exception as e:

@@ -40,3 +40,4 @@ export const endpoints = {
   boxIncome: () => getJSON(`${API_BASE}/api/boxplot/income_by_role`),
   genderPie: () => getJSON(`${API_BASE}/api/pie/gender`),
 };
+

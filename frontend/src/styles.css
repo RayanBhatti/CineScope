@@ -26,63 +26,27 @@ body{
   color: var(--text);
 }
 
-.container{
-  width:100%;
-  margin:0;
-  padding:12px 12px 24px;
-}
+.container{ width:100%; margin:0; padding:12px 12px 24px; }
 
-.header{
-  position:relative;
-  padding:18px 8px 8px;
-}
-.header .title{
-  margin:0;
-  font-size:32px;
-  font-weight:800;
-  letter-spacing:.2px;
-  text-align:center;
-}
-.header .subtitle{
-  margin:0;
-  font-size:15px;
-  opacity:.9;
-  text-align:center;
-}
+.header{ position:relative; padding:18px 8px 8px; }
+.header .title{ margin:0; font-size:32px; font-weight:800; letter-spacing:.2px; text-align:center; }
+.header .subtitle{ margin:0; font-size:15px; opacity:.9; text-align:center; }
 
 /* source button */
-.header .source.inline{
-  position:static; 
-  margin-top:10px; 
-  display:flex; 
-  justify-content:center;
-}
+.header .source.inline{ position:static; margin-top:10px; display:flex; justify-content:center; }
 
 /* GitHub button */
 .btn{ display:inline-flex; align-items:center; gap:8px; border-radius:10px; padding:8px 12px; font-weight:600; text-decoration:none; }
 .btn-github{ background:rgba(255,255,255,.08); color:var(--text); border:1px solid rgba(255,255,255,.18); }
 .btn-github:hover{ background:rgba(255,255,255,.14); }
 
-.link{
-  color:var(--text);
-  text-decoration:none;
-  border-bottom:1px solid rgba(255,255,255,.2);
-}
+.link{ color:var(--text); text-decoration:none; border-bottom:1px solid rgba(255,255,255,.2); }
 .link:hover{ opacity:.85 }
 
 /* grids */
-.grid{
-  display:grid; gap:12px;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-}
-.grid-two{
-  display:grid; gap:12px;
-  grid-template-columns: repeat(2, minmax(360px, 1fr));
-}
-.grid.three{
-  display:grid; gap:12px;
-  grid-template-columns: repeat(3, minmax(260px, 1fr));
-}
+.grid{ display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+.grid-two{ display:grid; gap:12px; grid-template-columns: repeat(2, minmax(360px, 1fr)); }
+.grid.three{ display:grid; gap:12px; grid-template-columns: repeat(3, minmax(260px, 1fr)); }
 
 /* cards */
 .card{
@@ -97,24 +61,14 @@ body{
 .card-body{ padding:10px 12px }
 
 /* KPIs */
-.kpis{
-  display:grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap:10px;
-}
-.kpi{
-  background:rgba(255,255,255,.05);
-  border:1px solid rgba(255,255,255,.12);
-  border-radius:12px; padding:10px 12px;
-}
+.kpis{ display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:10px; }
+.kpi{ background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.12); border-radius:12px; padding:10px 12px; }
 .kpi h4{ margin:0; font-size:13px; color:#cdd6f4; font-weight:700 }
 .kpi .val{ font-size:24px; font-weight:800; margin-top:2px }
 .hint{ color:var(--muted); font-size:12px }
 
 /* Key insights row of bubbles */
-.insights-row{
-  display:flex; gap:12px; flex-wrap:wrap;
-}
+.insights-row{ display:flex; gap:12px; flex-wrap:wrap; }
 .insight-bubble{
   background:rgba(255,255,255,.06);
   border:1px solid rgba(255,255,255,.12);
@@ -125,10 +79,13 @@ body{
 .insight-label{ font-weight:700; font-size:13px; color:#dbe4ff; margin-bottom:6px }
 .insight-text{ font-size:14px; color:#d7dcf0 }
 
+/* placeholder text in empty charts */
+.empty-msg{ color:var(--muted); font-size:14px; padding:16px }
+
 /* helpers */
 .scroll-y{ overflow-y:auto; max-height:520px; padding-right:6px }
 
-/* Toggleable tooltip */
+/* Toggleable tooltip — wider for better readability */
 .infotip{ display:inline-block; position:relative; margin-left:8px }
 .infotip-btn{
   appearance:none; background:transparent; border:1px solid rgba(255,255,255,.35); color:var(--text);
@@ -139,7 +96,7 @@ body{
 .infotip-pop{
   position:absolute; top:26px; left:50%; transform:translateX(-50%);
   background:var(--tooltip-bg); color:var(--text); border:1px solid var(--tooltip-bd);
-  padding:10px 12px; border-radius:12px; max-width:360px; font-size:13px; line-height:1.45; z-index:50;
+  padding:12px 14px; border-radius:12px; max-width:520px; font-size:14px; line-height:1.5; z-index:50;
   box-shadow: 0 10px 24px rgba(0,0,0,.35);
 }
 .infotip-title{ font-weight:800; margin-bottom:6px }

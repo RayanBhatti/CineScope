@@ -7,13 +7,13 @@ import {
   PieChart, Pie, Legend, Cell
 } from "recharts";
 
-/* Readable tooltip style */
+/* Recharts tooltip styles */
 const tooltipStyle = { background: "var(--tooltip-bg)", border: "1px solid var(--tooltip-bd)", color: textColor };
 const tooltipLabelStyle = { color: textColor };
 const tooltipItemStyle  = { color: textColor };
 
 /* Format helpers */
-const fmtPct = (v) => (v==null || isNaN(v) ? "n/a" : `${(v*100).toFixed(1)}%`);
+const fmtPct  = (v) => (v==null || isNaN(v) ? "n/a" : `${(v*100).toFixed(1)}%`);
 const fmtPct0 = (v) => (v==null || isNaN(v) ? "n/a" : `${(v*100).toFixed(0)}%`);
 const fmtCurrency = (v) => (v==null || isNaN(v) ? "n/a" : Intl.NumberFormat(undefined, { style:"currency", currency:"USD", maximumFractionDigits:0 }).format(v));
 const tickProps = { fill: axisStroke, fontSize: 12 };
@@ -21,7 +21,7 @@ const tickProps = { fill: axisStroke, fontSize: 12 };
 /* Robust field picking to avoid "Unknown" */
 const pick = (...vals) => vals.find(v => v !== undefined && v !== null && v !== "");
 
-/* Extract first number from a label like "0-1", "5 years", or return NaN */
+/* Extract first number from labels like "0-1", "5 years", etc. */
 const firstNumber = (v) => {
   if (typeof v === "number" && Number.isFinite(v)) return v;
   if (typeof v === "string") {
@@ -31,8 +31,8 @@ const firstNumber = (v) => {
   return NaN;
 };
 
-/* Nicer, toggleable info tooltip with custom SVG icon */
-function InfoTip({ children }) {
+/* Toggleable info tooltip with custom SVG icon */
+function InfoTip() {
   const [open, setOpen] = useState(false);
   return (
     <span className="infotip">
@@ -47,8 +47,7 @@ function InfoTip({ children }) {
         <div className="infotip-pop">
           <div className="infotip-title">How attrition is calculated</div>
           <div className="infotip-body">
-            Attrition rate = <b>count(Attrition = “Yes”)</b> ÷ <b>total employees</b>.<br/>
-            Example: <b>0.16 ≈ 16%</b> of employees left.
+            Attrition rate = <b>count(Attrition = “Yes”)</b> ÷ <b>total employees</b>. Example: <b>0.16 ≈ 16%</b> of employees left.
           </div>
           <div className="infotip-arrow" />
         </div>
@@ -57,7 +56,7 @@ function InfoTip({ children }) {
   );
 }
 
-/* KPI */
+/* KPI bubble */
 function KPI({ label, value, hint }) {
   return (
     <div className="kpi">
@@ -80,11 +79,13 @@ export default function AnalyticsDashboard() {
   const [deptOT, setDeptOT] = useState([]);
 
   const [ageHist, setAgeHist] = useState([]);
-  const [incHist, setIncHist] = useState([]);
   const [tenure, setTenure] = useState([]);
   const [scatter, setScatter] = useState([]);
   const [corrs, setCorrs] = useState([]);
   const [gender, setGender] = useState([]);
+
+  // income box stats endpoint (min/q1/median/q3/max per role)
+  const [boxIncome, setBoxIncome] = useState([]);
 
   const [err, setErr] = useState("");
 
@@ -102,11 +103,11 @@ export default function AnalyticsDashboard() {
           endpoints.byOvertime().then(setOvertime),
           endpoints.byTwoDeptOT().then(setDeptOT),
           endpoints.ageHist(12).then(setAgeHist),
-          endpoints.incomeHist(25).then(setIncHist),
           endpoints.tenure(40).then(setTenure),
           endpoints.scatter(1200).then(setScatter),
           endpoints.corrs().then(setCorrs),
-          endpoints.genderPie().then(setGender)
+          endpoints.genderPie().then(setGender),
+          endpoints.boxIncome().then(setBoxIncome), // uses your existing endpoint
         ]);
         if (cancelled) return;
       } catch (e) {
@@ -120,40 +121,45 @@ export default function AnalyticsDashboard() {
 
   // Normalize label + rate for bar charts
   const normRateRow = (d) => ({
-    key: pick(d?.k1, d?.department, d?.Department, d?.name, d?.key, "Unknown"),
+    key: pick(d?.k1, d?.key, d?.department, d?.Department, d?.name, "Unknown"),
     attrition_rate: Number(pick(d?.attrition_rate, d?.rate, d?.value, d?.attritionRate, 0)) || 0
   });
 
-  const deptByRate = useMemo(() => (dept || []).map(normRateRow)
+  const deptByRateFull = useMemo(() => (dept || []).map(normRateRow)
     .sort((a,b)=> (b.attrition_rate ?? 0) - (a.attrition_rate ?? 0)), [dept]);
+
+  const deptTop3 = useMemo(() => deptByRateFull.slice(0, 3), [deptByRateFull]);
 
   const roleByRate = useMemo(() => (role || []).map(normRateRow)
     .sort((a,b)=> (b.attrition_rate ?? 0) - (a.attrition_rate ?? 0)), [role]);
 
-  const eduByRate = useMemo(() => (edu || []).map(normRateRow)
-    .sort((a,b)=> (b.attrition_rate ?? 0) - (a.attrition_rate ?? 0)), [edu]);
-
-  const travelByRate = useMemo(() => (travel || []).map(normRateRow)
-    .sort((a,b)=> (b.attrition_rate ?? 0) - (a.attrition_rate ?? 0)), [travel]);
-
-  // Gender pie
+  // Gender pie (percent labels inside the slice)
+  const genderTotal = useMemo(() => (gender || []).reduce((s,g)=>s+Number(pick(g?.n,g?.count,g?.value,0))||0,0), [gender]);
   const genderPie = useMemo(() => (gender || []).map(g => ({
     gender: pick(g?.gender, g?.k1, g?.name, "Unknown"),
-    value: Number(pick(g?.count, g?.value, g?.n, 0)) || 0
+    value: Number(pick(g?.n, g?.count, g?.value, 0)) || 0
   })), [gender]);
 
-  // Age/Income histograms normalized
-  const ageHistNorm = useMemo(() => (ageHist || []).map(d => ({
-    k1: pick(d?.k1, d?.bin, d?.bucket, d?.label, ""),
-    count: Number(pick(d?.count, d?.n, d?.value, 0)) || 0
-  })), [ageHist]);
+  const renderPieLabel = (props) => {
+    const { cx, cy, midAngle, innerRadius, outerRadius, value } = props;
+    const RAD = Math.PI / 180;
+    const r = innerRadius + (outerRadius - innerRadius) * 0.6;
+    const x = cx + r * Math.cos(-midAngle * RAD);
+    const y = cy + r * Math.sin(-midAngle * RAD);
+    const pct = genderTotal ? `${Math.round((value / genderTotal) * 100)}%` : "";
+    return (
+      <text x={x} y={y} fill="#fff" textAnchor="middle" dominantBaseline="central" fontSize={14} fontWeight={700}>
+        {pct}
+      </text>
+    );
+  };
 
-  // Tenure line — numeric x derived from labels; sorted ascending
+  // Tenure — numeric X from labels (e.g., "0-1" => 0)
   const tenureSeries = useMemo(() => {
     const raw = Array.isArray(tenure) ? tenure : [];
     return raw
       .map((d, i) => {
-        const label = pick(d?.k1, d?.bin, d?.bucket, d?.label, i);
+        const label = pick(d?.k1, d?.bin, d?.bucket, d?.label, d?.years_at_company, i);
         const xParsed = firstNumber(label);
         const x = Number.isFinite(xParsed) ? xParsed : i;
         const y = Number(pick(d?.attrition_rate, d?.rate, d?.value, 0)) || 0;
@@ -162,51 +168,30 @@ export default function AnalyticsDashboard() {
       .sort((a, b) => a.x - b.x);
   }, [tenure]);
 
-  // Income spread by role (min/q1/median/q3/max); derived from role data if present
+  // Income spread by role (min/q1/median/q3/max) from /api/boxplot/income_by_role
   const incomeSpreadRole = useMemo(() => {
-    const rows = (role || []).map(r => ({
-      job_role: pick(r?.k1, r?.role, r?.name, "Unknown"),
-      min:     Number(pick(r?.min_income, r?.min, 0)) || 0,
-      q1:      Number(pick(r?.q1_income, r?.q1, 0)) || 0,
-      median:  Number(pick(r?.median_income, r?.median, 0)) || 0,
-      q3:      Number(pick(r?.q3_income, r?.q3, 0)) || 0,
-      max:     Number(pick(r?.max_income, r?.max, 0)) || 0
+    const rows = Array.isArray(boxIncome) ? boxIncome : [];
+    return rows.map(row => ({
+      job_role: row.job_role ?? "Unknown",
+      min:     Number(row.min)    || 0,
+      q1:      Number(row.q1)     || 0,
+      median:  Number(row.median) || 0,
+      q3:      Number(row.q3)     || 0,
+      max:     Number(row.max)    || 0,
     }));
-    // keep rows that have at least one non-zero value
-    return rows.filter(r => r.min || r.q1 || r.median || r.q3 || r.max);
-  }, [role]);
+  }, [boxIncome]);
 
-  // Scatter
-  const scatterData = useMemo(() => (scatter || []).map(s => ({
-    age: Number(pick(s?.age, s?.k1, s?.x, 0)) || 0,
-    monthly_income: Number(pick(s?.monthly_income, s?.income, s?.y, 0)) || 0,
-    left_flag: Number(pick(s?.left_flag, s?.left, s?.attrition, 0)) || 0
-  })), [scatter]);
-
-  // Insights
+  // Simple insights row (useful bubbles)
   const insights = useMemo(() => {
-    const topDept = deptByRate[0];
-    const lowDept = deptByRate[deptByRate.length-1];
+    const topDept = deptByRateFull[0];
+    const lowDept = deptByRateFull[deptByRateFull.length-1];
     const topRole = roleByRate[0];
-
-    const incomeCorr = (corrs || []).find(c => pick(c?.feature, c?.name) === "monthly_income");
-    const corrVal = incomeCorr?.corr ?? incomeCorr?.value ?? null;
-
-    const incomeText = (() => {
-      if (corrVal == null) return "Higher salaries show little direct correlation with attrition in this dataset.";
-      const strength = Math.abs(corrVal);
-      const dir = corrVal > 0 ? "increase" : "decrease";
-      const descr = strength >= 0.3 ? "a strong" : strength >= 0.15 ? "a moderate" : "a weak";
-      return `Monthly income shows ${descr} ${dir} in attrition (corr=${corrVal.toFixed(2)}).`;
-    })();
-
     return [
       { label: "Highest attrition by department", text: topDept ? `${topDept.key} (${fmtPct(topDept.attrition_rate)})` : "—" },
       { label: "Lowest attrition by department",  text: lowDept ? `${lowDept.key} (${fmtPct(lowDept.attrition_rate)})` : "—" },
       { label: "Role with highest attrition",     text: topRole ? `${topRole.key} (${fmtPct(topRole.attrition_rate)})` : "—" },
-      { label: "Income & attrition",              text: incomeText }
     ];
-  }, [deptByRate, roleByRate, corrs]);
+  }, [deptByRateFull, roleByRate]);
 
   return (
     <>
@@ -214,7 +199,7 @@ export default function AnalyticsDashboard() {
         <header className="header">
           <h1 className="title">CineScope Dashboard</h1>
           <p className="subtitle">
-            HR ATTRITION ANALYTICS <InfoTip>{null}</InfoTip>
+            HR ATTRITION ANALYTICS <InfoTip />
           </p>
 
           {/* View Source Code button with GitHub logo */}
@@ -261,7 +246,7 @@ export default function AnalyticsDashboard() {
           <div className="card-body scroll-y" style={{height:520}}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={roleByRate} layout="vertical" margin={{ left: 60 }}>
-                <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" horizontal={true} vertical={false}/>
+                <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" horizontal vertical={false}/>
                 <XAxis type="number" stroke={axisStroke} tick={tickProps} />
                 <YAxis dataKey="key" type="category" stroke={axisStroke} width={260} tick={tickProps} />
                 <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} cursor={{ fill: "rgba(255,255,255,0.08)" }} formatter={(v)=>fmtPct(v)} />
@@ -273,16 +258,22 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
 
-        {/* ===== Gender Split (left) + Attrition by Department (right) ===== */}
+        {/* ===== Gender Split (left) + Top 3 Departments by Attrition (right) ===== */}
         <div className="grid-two" style={{marginBottom:12}}>
           {/* Gender split */}
           <div className="card">
             <div className="card-head"><h3>Gender Split</h3></div>
-            <div className="card-body" style={{height:280}}>
+            <div className="card-body" style={{height:320}}>
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Legend />
-                  <Pie data={genderPie} dataKey="value" nameKey="gender" outerRadius={120} label>
+                  <Pie
+                    data={genderPie}
+                    dataKey="value"
+                    nameKey="gender"
+                    outerRadius={120}
+                    label={renderPieLabel}
+                  >
                     {genderPie.map((_,i)=>(<Cell key={i} fill={palette[i % palette.length]} />))}
                   </Pie>
                 </PieChart>
@@ -290,19 +281,19 @@ export default function AnalyticsDashboard() {
             </div>
           </div>
 
-          {/* Attrition by Department */}
+          {/* Top 3 Departments by Attrition */}
           <div className="card">
-            <div className="card-head"><h3>Attrition by Department</h3></div>
+            <div className="card-head"><h3>Top 3 Departments by Attrition</h3></div>
             <div className="card-body" style={{height:320}}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={deptByRate}>
+                <BarChart data={deptTop3}>
                   <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
                   <XAxis dataKey="key" stroke={axisStroke} tick={tickProps} />
                   <YAxis stroke={axisStroke} tick={tickProps} tickFormatter={fmtPct0} />
                   <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} cursor={{ fill: "rgba(255,255,255,0.08)" }} formatter={(v)=>fmtPct(v)} />
                   <Legend />
                   <Bar dataKey="attrition_rate">
-                    {deptByRate.map((_,i)=>(<Cell key={i} fill={palette[i % palette.length]} />))}
+                    {deptTop3.map((_,i)=>(<Cell key={i} fill={palette[i % palette.length]} />))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -317,7 +308,7 @@ export default function AnalyticsDashboard() {
             <div className="card-head"><h3>Age Distribution (bins)</h3></div>
             <div className="card-body" style={{height:280}}>
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={ageHistNorm}>
+                <AreaChart data={ageHist}>
                   <defs>
                     <linearGradient id="ageGrad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor={palette[2]} stopOpacity="0.9"/>
@@ -365,29 +356,33 @@ export default function AnalyticsDashboard() {
             </div>
           </div>
 
-          {/* REPLACED: Monthly Income Distribution -> Income per Role (stacked min/Q1/Median/Q3/Max) */}
+          {/* Income per Role (stacked min/Q1/Median/Q3/Max) */}
           <div className="card">
             <div className="card-head"><h3>Income per Role (Min • Q1 • Median • Q3 • Max)</h3></div>
             <div className="card-body" style={{height:280}}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={incomeSpreadRole}>
-                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                  <XAxis dataKey="job_role" stroke={axisStroke} tick={tickProps} />
-                  <YAxis stroke={axisStroke} tick={tickProps} tickFormatter={(v)=>Intl.NumberFormat().format(v)} />
-                  <Tooltip
-                    contentStyle={tooltipStyle}
-                    labelStyle={tooltipLabelStyle}
-                    itemStyle={tooltipItemStyle}
-                    formatter={(v, name)=>[fmtCurrency(v), ({min:"Min", q1:"Q1", median:"Median", q3:"Q3", max:"Max"}[name]||name)]}
-                  />
-                  <Legend />
-                  <Bar dataKey="min"    stackId="spread" fill={palette[0]} />
-                  <Bar dataKey="q1"     stackId="spread" fill={palette[1]} />
-                  <Bar dataKey="median" stackId="spread" fill={palette[2]} />
-                  <Bar dataKey="q3"     stackId="spread" fill={palette[3]} />
-                  <Bar dataKey="max"    stackId="spread" fill={palette[4]} />
-                </BarChart>
-              </ResponsiveContainer>
+              {incomeSpreadRole.length === 0 ? (
+                <div className="empty-msg">No income spread data available.</div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={incomeSpreadRole}>
+                    <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                    <XAxis dataKey="job_role" stroke={axisStroke} tick={tickProps} />
+                    <YAxis stroke={axisStroke} tick={tickProps} tickFormatter={(v)=>Intl.NumberFormat().format(v)} />
+                    <Tooltip
+                      contentStyle={tooltipStyle}
+                      labelStyle={tooltipLabelStyle}
+                      itemStyle={tooltipItemStyle}
+                      formatter={(v, name)=>[fmtCurrency(v), ({min:"Min", q1:"Q1", median:"Median", q3:"Q3", max:"Max"}[name]||name)]}
+                    />
+                    <Legend />
+                    <Bar dataKey="min"    stackId="spread" fill={palette[0]} />
+                    <Bar dataKey="q1"     stackId="spread" fill={palette[1]} />
+                    <Bar dataKey="median" stackId="spread" fill={palette[2]} />
+                    <Bar dataKey="q3"     stackId="spread" fill={palette[3]} />
+                    <Bar dataKey="max"    stackId="spread" fill={palette[4]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
         </div>
@@ -408,8 +403,8 @@ export default function AnalyticsDashboard() {
                   cursor={{ fill: "rgba(255,255,255,0.08)" }}
                   formatter={(v, name)=>[name==="monthly_income"?fmtCurrency(v):v, name==="monthly_income"?"Monthly Income":name==="age"?"Age":"Left?"]} />
                 <Legend />
-                <Scatter data={scatterData.filter(d=>d.left_flag===1)} name="Left" fill={yesColor} />
-                <Scatter data={scatterData.filter(d=>d.left_flag===0)} name="Stayed" fill={noColor} />
+                <Scatter data={scatter.filter(d=>d.left_flag===1)} name="Left" fill={yesColor} />
+                <Scatter data={scatter.filter(d=>d.left_flag===0)} name="Stayed" fill={noColor} />
               </ScatterChart>
             </ResponsiveContainer>
           </div>
@@ -421,7 +416,7 @@ export default function AnalyticsDashboard() {
           <div className="card-body" style={{height:420}}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={[...(corrs||[])].sort((a,b)=>Math.abs(b.corr||0)-Math.abs(a.corr||0))} layout="vertical" margin={{ left: 160 }}>
-                <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" horizontal={true} vertical={false}/>
+                <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" horizontal vertical={false}/>
                 <XAxis type="number" stroke={axisStroke} tick={tickProps} domain={[-1,1]} />
                 <YAxis type="category" dataKey="feature" stroke={axisStroke} width={150} tick={tickProps} />
                 <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle}

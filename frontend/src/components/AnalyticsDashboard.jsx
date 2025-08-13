@@ -3,35 +3,20 @@ import { endpoints } from "../api";
 import { palette, yesColor, noColor, gridStroke, axisStroke, textColor } from "../theme";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
-  LineChart, Line, AreaChart, Area, ScatterChart, Scatter, ZAxis,
+  LineChart, Line, ScatterChart, Scatter, ZAxis,
   PieChart, Pie, Legend, Cell
 } from "recharts";
 
-/* Recharts tooltip styles */
 const tooltipStyle = { background: "var(--tooltip-bg)", border: "1px solid var(--tooltip-bd)", color: textColor };
 const tooltipLabelStyle = { color: textColor };
 const tooltipItemStyle  = { color: textColor };
-
-/* Format helpers */
 const fmtPct  = (v) => (v==null || isNaN(v) ? "n/a" : `${(v*100).toFixed(1)}%`);
 const fmtPct0 = (v) => (v==null || isNaN(v) ? "n/a" : `${(v*100).toFixed(0)}%`);
 const fmtCurrency = (v) => (v==null || isNaN(v) ? "n/a" : Intl.NumberFormat(undefined, { style:"currency", currency:"USD", maximumFractionDigits:0 }).format(v));
 const tickProps = { fill: axisStroke, fontSize: 12 };
-
-/* Robust field picking to avoid "Unknown" */
 const pick = (...vals) => vals.find(v => v !== undefined && v !== null && v !== "");
 
-/* Extract first number from labels like "0-1", "5 years", etc. */
-const firstNumber = (v) => {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string") {
-    const m = v.match(/-?\d+(\.\d+)?/);
-    if (m) return Number(m[0]);
-  }
-  return NaN;
-};
-
-/* Toggleable info tooltip with custom SVG icon */
+/* Info tooltip */
 function InfoTip() {
   const [open, setOpen] = useState(false);
   return (
@@ -56,7 +41,6 @@ function InfoTip() {
   );
 }
 
-/* KPI bubble */
 function KPI({ label, value, hint }) {
   return (
     <div className="kpi">
@@ -70,7 +54,7 @@ function KPI({ label, value, hint }) {
 /* Custom tooltip for Income per Role (box-like stacked bar) */
 function IncomeTooltip({ active, payload, label }) {
   if (!active || !payload || !payload.length) return null;
-  const d = payload[0].payload; // we stuffed the original quantiles on each row
+  const d = payload[0].payload;
   return (
     <div style={{ ...tooltipStyle, padding: 10, borderRadius: 10 }}>
       <div style={{ fontWeight: 800, marginBottom: 6 }}>{label}</div>
@@ -84,28 +68,18 @@ function IncomeTooltip({ active, payload, label }) {
 }
 
 export default function AnalyticsDashboard() {
-  // datasets
   const [summary, setSummary] = useState(null);
-
   const [dept, setDept] = useState([]);
   const [role, setRole] = useState([]);
-  const [edu, setEdu] = useState([]);
-  const [travel, setTravel] = useState([]);
-  const [overtime, setOvertime] = useState([]);
-  const [deptOT, setDeptOT] = useState([]);
-
-  const [ageHist, setAgeHist] = useState([]);
-  const [tenure, setTenure] = useState([]);
-  const [scatter, setScatter] = useState([]);
   const [corrs, setCorrs] = useState([]);
   const [gender, setGender] = useState([]);
-
-  // income box stats endpoint (min/q1/median/q3/max per role)
+  const [scatter, setScatter] = useState([]);
   const [boxIncome, setBoxIncome] = useState([]);
 
-  const [err, setErr] = useState("");
+  // NEW series
+  const [attrVsMinInc, setAttrVsMinInc] = useState([]);  // {min_income, attrition_rate}
+  const [attrByEmpIdx, setAttrByEmpIdx] = useState([]);  // {idx, left_flag}
 
-  // load all concurrently
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -114,130 +88,82 @@ export default function AnalyticsDashboard() {
           endpoints.summary().then(setSummary),
           endpoints.byDepartment().then(setDept),
           endpoints.byRole().then(setRole),
-          endpoints.byEducationField().then(setEdu),
-          endpoints.byBusinessTravel().then(setTravel),
-          endpoints.byOvertime().then(setOvertime),
-          endpoints.byTwoDeptOT().then(setDeptOT),
-          endpoints.ageHist(12).then(setAgeHist),
-          endpoints.tenure(40).then(setTenure),
-          endpoints.scatter(1200).then(setScatter),
           endpoints.corrs().then(setCorrs),
           endpoints.genderPie().then(setGender),
-          endpoints.boxIncome().then(setBoxIncome), // uses your existing endpoint
+          endpoints.scatter(1200).then(setScatter),
+          endpoints.boxIncome().then(setBoxIncome),
+          endpoints.attritionVsMinIncome(30).then(setAttrVsMinInc),   // NEW
+          endpoints.attritionByEmployeeIndex().then(setAttrByEmpIdx), // NEW
         ]);
         if (cancelled) return;
       } catch (e) {
-        if (!cancelled) setErr(String(e?.message || e));
+        if (!cancelled) console.error(e);
       }
     })();
     return () => { cancelled = true; };
   }, []);
 
-  // ——— transforms & helpers ———
-
-  // Normalize label + rate for bar charts
   const normRateRow = (d) => ({
     key: pick(d?.k1, d?.key, d?.department, d?.Department, d?.name, "Unknown"),
     attrition_rate: Number(pick(d?.attrition_rate, d?.rate, d?.value, d?.attritionRate, 0)) || 0
   });
 
-  const deptByRateFull = useMemo(() => (dept || []).map(normRateRow)
-    .sort((a,b)=> (b.attrition_rate ?? 0) - (a.attrition_rate ?? 0)), [dept]);
+  const deptTop3 = useMemo(
+    () => (dept || []).map(normRateRow).sort((a,b)=>b.attrition_rate-a.attrition_rate).slice(0,3),
+    [dept]
+  );
 
-  const deptTop3 = useMemo(() => deptByRateFull.slice(0, 3), [deptByRateFull]);
+  const roleByRate = useMemo(
+    () => (role || []).map(normRateRow).sort((a,b)=>b.attrition_rate-a.attrition_rate),
+    [role]
+  );
 
-  const roleByRate = useMemo(() => (role || []).map(normRateRow)
-    .sort((a,b)=> (b.attrition_rate ?? 0) - (a.attrition_rate ?? 0)), [role]);
-
-  // Gender pie (percent labels inside the slice)
+  // Gender pie (with % labels)
   const genderTotal = useMemo(() => (gender || []).reduce((s,g)=>s+Number(pick(g?.n,g?.count,g?.value,0))||0,0), [gender]);
   const genderPie = useMemo(() => (gender || []).map(g => ({
     gender: pick(g?.gender, g?.k1, g?.name, "Unknown"),
     value: Number(pick(g?.n, g?.count, g?.value, 0)) || 0
   })), [gender]);
 
-  const renderPieLabel = (props) => {
-    const { cx, cy, midAngle, innerRadius, outerRadius, value } = props;
-    const RAD = Math.PI / 180;
-    const r = innerRadius + (outerRadius - innerRadius) * 0.6;
-    const x = cx + r * Math.cos(-midAngle * RAD);
-    const y = cy + r * Math.sin(-midAngle * RAD);
-    const pct = genderTotal ? `${Math.round((value / genderTotal) * 100)}%` : "";
-    return (
-      <text x={x} y={y} fill="#fff" textAnchor="middle" dominantBaseline="central" fontSize={14} fontWeight={700}>
-        {pct}
-      </text>
-    );
+  const renderPieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, value }) => {
+    const RAD = Math.PI/180;
+    const r = innerRadius + (outerRadius-innerRadius)*0.6;
+    const x = cx + r*Math.cos(-midAngle*RAD);
+    const y = cy + r*Math.sin(-midAngle*RAD);
+    const pct = genderTotal ? `${Math.round((value/genderTotal)*100)}%` : "";
+    return <text x={x} y={y} fill="#fff" textAnchor="middle" dominantBaseline="central" fontSize={14} fontWeight={700}>{pct}</text>;
   };
 
-  // Tenure — numeric X from labels (e.g., "0-1" => 0)
-  const tenureSeries = useMemo(() => {
-    const raw = Array.isArray(tenure) ? tenure : [];
-    return raw
-      .map((d, i) => {
-        const label = pick(d?.k1, d?.bin, d?.bucket, d?.label, d?.years_at_company, i);
-        const xParsed = firstNumber(label);
-        const x = Number.isFinite(xParsed) ? xParsed : i;
-        const y = Number(pick(d?.attrition_rate, d?.rate, d?.value, 0)) || 0;
-        return { x, attrition_rate: y };
-      })
-      .sort((a, b) => a.x - b.x);
-  }, [tenure]);
-
-  // Income per role — convert to stacked *ranges* so the total height equals `max`
+  // Income per role -> stacked ranges so total = max
   const incomeBoxData = useMemo(() => {
     const rows = Array.isArray(boxIncome) ? boxIncome : [];
     return rows.map(r => {
-      const min = Number(r.min) || 0;
-      const q1 = Number(r.q1) || 0;
-      const median = Number(r.median) || 0;
-      const q3 = Number(r.q3) || 0;
-      const max = Number(r.max) || 0;
-
-      // segments for stacking as ranges
-      const seg_min = Math.max(min, 0);               // from 0 → min
-      const seg_q1  = Math.max(q1 - min, 0);          // min → q1
-      const seg_med = Math.max(median - q1, 0);       // q1 → median
-      const seg_q3  = Math.max(q3 - median, 0);       // median → q3
-      const seg_max = Math.max(max - q3, 0);          // q3 → max
-
+      const min = +r.min||0, q1=+r.q1||0, median=+r.median||0, q3=+r.q3||0, max=+r.max||0;
       return {
         job_role: r.job_role ?? "Unknown",
-        // original quantiles (for tooltip)
         min, q1, median, q3, max,
-        // stacked segments (plotted)
-        seg_min, seg_q1, seg_med, seg_q3, seg_max
+        seg_min:min, seg_q1:Math.max(q1-min,0), seg_med:Math.max(median-q1,0),
+        seg_q3:Math.max(q3-median,0), seg_max:Math.max(max-q3,0)
       };
     });
   }, [boxIncome]);
+  const maxIncome = useMemo(()=>incomeBoxData.reduce((m,d)=>Math.max(m,d.max||0),0),[incomeBoxData]);
 
-  const maxIncome = useMemo(
-    () => incomeBoxData.reduce((m, d) => Math.max(m, d.max || 0), 0),
-    [incomeBoxData]
-  );
-
-  // Simple insights row (useful bubbles)
   const insights = useMemo(() => {
-    const topDept = deptByRateFull[0];
-    const lowDept = deptByRateFull[deptByRateFull.length-1];
+    const topDept = deptTop3[0];
     const topRole = roleByRate[0];
     return [
       { label: "Highest attrition by department", text: topDept ? `${topDept.key} (${fmtPct(topDept.attrition_rate)})` : "—" },
-      { label: "Lowest attrition by department",  text: lowDept ? `${lowDept.key} (${fmtPct(lowDept.attrition_rate)})` : "—" },
       { label: "Role with highest attrition",     text: topRole ? `${topRole.key} (${fmtPct(topRole.attrition_rate)})` : "—" },
     ];
-  }, [deptByRateFull, roleByRate]);
+  }, [deptTop3, roleByRate]);
 
   return (
     <>
       <div className="container">
         <header className="header">
           <h1 className="title">CineScope Dashboard</h1>
-          <p className="subtitle">
-            HR ATTRITION ANALYTICS <InfoTip />
-          </p>
-
-          {/* View Source Code button with GitHub logo */}
+          <p className="subtitle">HR ATTRITION ANALYTICS <InfoTip /></p>
           <div className="source inline">
             <a className="btn btn-github" href="https://github.com/RayanBhatti/CineScope" target="_blank" rel="noreferrer">
               <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" style={{marginRight:8}}>
@@ -260,7 +186,7 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
 
-        {/* Key Insights — row of bubbles */}
+        {/* Insights */}
         <div className="card" style={{ marginBottom: 14 }}>
           <div className="card-head"><h3>Key Insights</h3></div>
           <div className="card-body">
@@ -275,10 +201,10 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
 
-        {/* ===== Attrition by Job Role (full width) ===== */}
+        {/* Attrition by Job Role (full width) */}
         <div className="card" style={{gridColumn:"1 / -1", marginBottom:12}}>
           <div className="card-head"><h3>Attrition by Job Role</h3></div>
-          <div className="card-body scroll-y" style={{height:520}}>
+          <div className="card-body" style={{height:520, overflowY:"auto", paddingRight:6}}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={roleByRate} layout="vertical" margin={{ left: 60 }}>
                 <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" horizontal vertical={false}/>
@@ -293,22 +219,15 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
 
-        {/* ===== Gender Split (left) + Top 3 Departments by Attrition (right) ===== */}
+        {/* Gender + Dept top 3 */}
         <div className="grid-two" style={{marginBottom:12}}>
-          {/* Gender split */}
           <div className="card">
             <div className="card-head"><h3>Gender Split</h3></div>
             <div className="card-body" style={{height:320}}>
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Legend />
-                  <Pie
-                    data={genderPie}
-                    dataKey="value"
-                    nameKey="gender"
-                    outerRadius={120}
-                    label={renderPieLabel}
-                  >
+                  <Pie data={genderPie} dataKey="value" nameKey="gender" outerRadius={120} label={renderPieLabel}>
                     {genderPie.map((_,i)=>(<Cell key={i} fill={palette[i % palette.length]} />))}
                   </Pie>
                 </PieChart>
@@ -316,7 +235,6 @@ export default function AnalyticsDashboard() {
             </div>
           </div>
 
-          {/* Top 3 Departments by Attrition */}
           <div className="card">
             <div className="card-head"><h3>Top 3 Departments by Attrition</h3></div>
             <div className="card-body" style={{height:320}}>
@@ -325,7 +243,7 @@ export default function AnalyticsDashboard() {
                   <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
                   <XAxis dataKey="key" stroke={axisStroke} tick={tickProps} />
                   <YAxis stroke={axisStroke} tick={tickProps} tickFormatter={fmtPct0} />
-                  <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} cursor={{ fill: "rgba(255,255,255,0.08)" }} formatter={(v)=>fmtPct(v)} />
+                  <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} formatter={(v)=>fmtPct(v)} />
                   <Legend />
                   <Bar dataKey="attrition_rate">
                     {deptTop3.map((_,i)=>(<Cell key={i} fill={palette[i % palette.length]} />))}
@@ -336,62 +254,50 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
 
-        {/* ===== Remaining small charts row ===== */}
+        {/* Three-up row: REPLACED first two cards with new line charts */}
         <div className="grid three">
-          {/* Age Distribution (bins) */}
+          {/* 1) Attrition vs Minimum Income (line) */}
           <div className="card">
-            <div className="card-head"><h3>Age Distribution (bins)</h3></div>
+            <div className="card-head"><h3>Attrition vs Minimum Income</h3></div>
             <div className="card-body" style={{height:280}}>
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={ageHist}>
-                  <defs>
-                    <linearGradient id="ageGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={palette[2]} stopOpacity="0.9"/>
-                      <stop offset="100%" stopColor={palette[2]} stopOpacity="0.15"/>
-                    </linearGradient>
-                  </defs>
+                <LineChart data={attrVsMinInc}>
                   <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                  <XAxis dataKey="k1" stroke={axisStroke} tick={tickProps} />
-                  <YAxis stroke={axisStroke} tick={tickProps} />
-                  <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
-                  <Area dataKey="count" stroke={palette[2]} fill="url(#ageGrad)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Attrition vs Tenure — numeric axis */}
-          <div className="card">
-            <div className="card-head"><h3>Attrition vs Tenure (Years at Company)</h3></div>
-            <div className="card-body" style={{height:280}}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={tenureSeries}>
-                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                  <XAxis
-                    type="number"
-                    dataKey="x"
-                    stroke={axisStroke}
-                    tick={tickProps}
-                    domain={['dataMin', 'dataMax']}
-                    allowDecimals={false}
-                    tickFormatter={(v) => String(Math.round(v))}
-                  />
-                  <YAxis stroke={axisStroke} tick={tickProps} tickFormatter={fmtPct0} />
+                  <XAxis dataKey="min_income" stroke={axisStroke} tick={tickProps} tickFormatter={(v)=>Intl.NumberFormat().format(v)} />
+                  <YAxis stroke={axisStroke} tick={tickProps} tickFormatter={fmtPct0} domain={[0, 'dataMax']} />
                   <Tooltip
                     contentStyle={tooltipStyle}
                     labelStyle={tooltipLabelStyle}
                     itemStyle={tooltipItemStyle}
-                    formatter={(v) => fmtPct(v)}
-                    labelFormatter={(v) => `Years: ${Math.round(v)}`}
+                    formatter={(v, n)=> n==="attrition_rate" ? fmtPct(v) : fmtCurrency(v)}
+                    labelFormatter={(v)=>`Min income: ${fmtCurrency(v)}`}
                   />
                   <Legend />
-                  <Line type="monotone" dataKey="attrition_rate" stroke={palette[6]} dot={false} />
+                  <Line type="monotone" dataKey="attrition_rate" stroke={palette[6]} dot={false}/>
                 </LineChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Income per Role (box/whisker as stacked ranges) */}
+          {/* 2) Attrition (0/1) over Employee Number (line) */}
+          <div className="card">
+            <div className="card-head"><h3>Attrition by Employee Number</h3></div>
+            <div className="card-body" style={{height:280}}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={attrByEmpIdx}>
+                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                  <XAxis dataKey="idx" stroke={axisStroke} tick={tickProps} />
+                  <YAxis stroke={axisStroke} tick={tickProps} domain={[0,1]} tickFormatter={(v)=>v===1?"Yes":v===0?"No":v}/>
+                  <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle}
+                           formatter={(v)=>v===1?"Yes (left)":"No (stayed)"} labelFormatter={(v)=>`Employee #${v}`} />
+                  <Legend />
+                  <Line type="stepAfter" dataKey="left_flag" stroke={palette[1]} dot={false}/>
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* 3) Income per Role (box/whisker as stacked ranges) */}
           <div className="card">
             <div className="card-head"><h3>Income per Role (Min • Q1 • Median • Q3 • Max)</h3></div>
             <div className="card-body" style={{height:280}}>
@@ -402,16 +308,9 @@ export default function AnalyticsDashboard() {
                   <BarChart data={incomeBoxData}>
                     <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
                     <XAxis dataKey="job_role" stroke={axisStroke} tick={tickProps} />
-                    <YAxis
-                      stroke={axisStroke}
-                      tick={tickProps}
-                      tickFormatter={(v)=>Intl.NumberFormat().format(v)}
-                      domain={[0, maxIncome]}
-                    />
-                    {/* Custom tooltip showing Max→...→Min (flipped order) with the correct quantiles */}
+                    <YAxis stroke={axisStroke} tick={tickProps} tickFormatter={(v)=>Intl.NumberFormat().format(v)} domain={[0, maxIncome]} />
                     <Tooltip content={<IncomeTooltip />} />
                     <Legend />
-                    {/* stack *ranges* so total = max */}
                     <Bar dataKey="seg_min" stackId="spread" name="min"    fill={palette[0]} />
                     <Bar dataKey="seg_q1"  stackId="spread" name="q1"     fill={palette[1]} />
                     <Bar dataKey="seg_med" stackId="spread" name="median" fill={palette[2]} />
@@ -424,7 +323,7 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
 
-        {/* Scatter: Age vs Monthly Income (full width) */}
+        {/* Scatter: Age vs Monthly Income (kept) */}
         <div className="card" style={{gridColumn:"1 / -1", marginTop:12}}>
           <div className="card-head"><h3>Age vs Monthly Income (colored by attrition)</h3></div>
           <div className="card-body" style={{height:420}}>
@@ -434,9 +333,7 @@ export default function AnalyticsDashboard() {
                 <XAxis type="number" dataKey="age" stroke={axisStroke} tick={tickProps} domain={[15, 'dataMax']} />
                 <YAxis type="number" dataKey="monthly_income" stroke={axisStroke} tick={tickProps} />
                 <ZAxis type="category" dataKey="left_flag" range={[70,70]} />
-                <Tooltip contentStyle={tooltipStyle}
-                  labelStyle={tooltipLabelStyle}
-                  itemStyle={tooltipItemStyle}
+                <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle}
                   cursor={{ fill: "rgba(255,255,255,0.08)" }}
                   formatter={(v, name)=>[name==="monthly_income"?fmtCurrency(v):v, name==="monthly_income"?"Monthly Income":name==="age"?"Age":"Left?"]} />
                 <Legend />
@@ -447,7 +344,7 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
 
-        {/* Correlations — horizontal bar viz */}
+        {/* Correlations */}
         <div className="card" style={{marginTop:12}}>
           <div className="card-head"><h3>Correlation with Attrition (Yes=1, No=0)</h3></div>
           <div className="card-body" style={{height:420}}>
@@ -470,9 +367,7 @@ export default function AnalyticsDashboard() {
 
       </div>
 
-      <footer className="footer">
-        © 2025 Rayan Bhatti — All rights reserved.
-      </footer>
+      <footer className="footer">© 2025 Rayan Bhatti — All rights reserved.</footer>
     </>
   );
 }

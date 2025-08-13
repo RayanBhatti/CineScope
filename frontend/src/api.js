@@ -39,5 +39,10 @@ export const endpoints = {
   corrs: () => getJSON(`${API_BASE}/api/correlation/numeric`),
   boxIncome: () => getJSON(`${API_BASE}/api/boxplot/income_by_role`),
   genderPie: () => getJSON(`${API_BASE}/api/pie/gender`),
-};
 
+  attritionVsMinIncome: (buckets = 30) =>
+    getJSON(`${API_BASE}/api/line/attrition_vs_min_income?buckets=${buckets}`),
+
+  attritionByEmployeeIndex: () =>
+    getJSON(`${API_BASE}/api/line/attrition_by_employee_index`),
+};

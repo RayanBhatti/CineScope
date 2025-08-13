@@ -9,13 +9,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-allowed = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+ALLOWED = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed,
+    allow_origins=[o.strip() for o in ALLOWED if o.strip()],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 @app.get("/", include_in_schema=False)
 def root():
@@ -59,7 +61,7 @@ def attrition_by(dim: str = Query(..., description="One of: " + ", ".join(sorted
 
 @app.get("/api/distribution/age")
 def age_hist(buckets: int = 9, min_age: int = 18, max_age: int = 60):
-    sql = text("""
+    sql = """
     SELECT width_bucket(age, :min_age, :max_age, :buckets) AS bucket,
            MIN(age) AS min_age,
            MAX(age) AS max_age,
@@ -69,5 +71,5 @@ def age_hist(buckets: int = 9, min_age: int = 18, max_age: int = 60):
     WHERE age IS NOT NULL
     GROUP BY bucket
     ORDER BY bucket;
-    """)
+    """
     return run_query(sql, {"min_age": min_age, "max_age": max_age, "buckets": buckets})

@@ -1,7 +1,7 @@
 {
   "name": "cinescope-frontend",
   "private": true,
-  "version": "0.0.2",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,10 +14,8 @@
     "recharts": "^2.12.7"
   },
   "devDependencies": {
-    "vite": "^5.3.0",
-    "@vitejs/plugin-react": "^4.3.0"
+    "@vitejs/plugin-react": "^4.3.0",
+    "vite": "^5.3.0"
   },
-  "engines": {
-    "node": ">=18 <23"
-  }
+  "engines": { "node": ">=18 <23" }
 }

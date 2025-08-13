@@ -1,15 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
-import { endpoints, getDashboard } from "../api";
+import { endpoints } from "../api";
+import ChartCard from "./ChartCard";
+import MetricCard from "./MetricCard";
+import { palette, yesColor, noColor, gridStroke, axisStroke, textColor } from "../theme";
+
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   LineChart, Line, AreaChart, Area, ScatterChart, Scatter, ZAxis,
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
-  PieChart, Pie, Legend
+  PieChart, Pie, Legend, Cell
 } from "recharts";
 
-const useBatch = false; // set true after you add /api/dashboard (Option B)
+/* ---------- local styles for the simple table ---------- */
+const thStyle = { textAlign:"left", padding:"8px 10px", borderBottom:"1px solid rgba(255,255,255,.12)", fontWeight:700 };
+const tdStyle = { textAlign:"left", padding:"8px 10px" };
+
+/* ---------- tiny wrap to give charts consistent padding ---------- */
+function ChartWrap({ children }) {
+  return <div style={{ width:"100%", height:"100%" }}>{children}</div>;
+}
 
 export default function AnalyticsDashboard() {
+  // data
   const [summary, setSummary] = useState(null);
   const [byDept, setByDept] = useState([]);
   const [byRole, setByRole] = useState([]);
@@ -22,89 +34,56 @@ export default function AnalyticsDashboard() {
   const [scatter, setScatter] = useState([]);
   const [radar, setRadar] = useState([]);
   const [genderPie, setGenderPie] = useState([]);
-  const [err, setErr] = useState("");
-  const [loading, setLoading] = useState(true);
 
+  // ui
+  const [binsAge, setBinsAge] = useState(9);
+  const [binsInc, setBinsInc] = useState(20);
+  const [scatterN, setScatterN] = useState(800);
+  const [err, setErr] = useState("");
+
+  // initial concurrent load
   useEffect(() => {
-    let cancelled = false;
+    let done = false;
     (async () => {
       try {
-        if (useBatch) {
-          const d = await getDashboard();
-          if (cancelled) return;
-          setSummary(d.summary);
-          setByDept(d.byDept);
-          setByRole(d.byRole);
-          setAgeHist(d.ageHist);
-          setIncHist(d.incomeHist);
-          setTenure(d.tenure);
-          setDeptOvertime(d.byTwo);
-          setCorrs(d.corrs);
-          setBoxIncome(d.boxIncome);
-          setScatter(d.scatter);
-          setRadar(d.radar);
-          setGenderPie(d.genderPie);
-        } else {
-          // Fire everything concurrently
-          const tasks = {
-            summary: endpoints.summary(),
-            byDept: endpoints.byDept(),
-            byRole: endpoints.byRole(),
-            ageHist: endpoints.ageHist(),
-            incomeHist: endpoints.incomeHist(),
-            tenure: endpoints.tenure(),
-            byTwo: endpoints.byTwo(),
-            corrs: endpoints.corrs(),
-            boxIncome: endpoints.boxIncome(),
-            scatter: endpoints.scatter(),
-            radar: endpoints.radar(),
-            genderPie: endpoints.genderPie(),
-          };
-          const entries = Object.entries(tasks);
-          const results = await Promise.allSettled(entries.map(([, p]) => p));
-
-          if (cancelled) return;
-          results.forEach((res, i) => {
-            const key = entries[i][0];
-            if (res.status === "fulfilled") {
-              const setterMap = {
-                summary: setSummary,
-                byDept: setByDept,
-                byRole: setByRole,
-                ageHist: setAgeHist,
-                incomeHist: setIncHist,
-                tenure: setTenure,
-                byTwo: setDeptOvertime,
-                corrs: setCorrs,
-                boxIncome: setBoxIncome,
-                scatter: setScatter,
-                radar: setRadar,
-                genderPie: setGenderPie,
-              };
-              setterMap[key](res.value);
-            } else {
-              console.warn(`Failed ${key}:`, res.reason);
-              // Show the first error prominently
-              if (!err) setErr(String(res.reason));
-            }
-          });
-        }
+        const tasks = [
+          endpoints.summary().then(setSummary),
+          endpoints.byDept().then(setByDept),
+          endpoints.byRole().then(setByRole),
+          endpoints.ageHist(binsAge, 18, 60).then(setAgeHist),
+          endpoints.incomeHist(binsInc).then(setIncHist),
+          endpoints.tenure(40).then(setTenure),
+          endpoints.byTwo().then(setDeptOvertime),
+          endpoints.corrs().then(setCorrs),
+          endpoints.boxIncome().then(setBoxIncome),
+          endpoints.scatter(scatterN).then(setScatter),
+          endpoints.radar().then(setRadar),
+          endpoints.genderPie().then(setGenderPie),
+        ];
+        const res = await Promise.allSettled(tasks);
+        const firstErr = res.find(r => r.status === "rejected");
+        if (!done && firstErr) setErr(String(firstErr.reason));
       } catch (e) {
-        setErr(String(e));
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (!done) setErr(String(e));
       }
     })();
-    return () => { cancelled = true; };
-  }, []); // run once
+    return () => { done = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // initial only
 
+  // reactive controls
+  useEffect(() => { endpoints.ageHist(binsAge, 18, 60).then(setAgeHist).catch(e => setErr(String(e))); }, [binsAge]);
+  useEffect(() => { endpoints.incomeHist(binsInc).then(setIncHist).catch(e => setErr(String(e))); }, [binsInc]);
+  useEffect(() => { endpoints.scatter(scatterN).then(setScatter).catch(e => setErr(String(e))); }, [scatterN]);
+
+  // transforms
   const deptOvertimePivot = useMemo(() => {
     const by = {};
     for (const r of deptOvertime) {
       const k = r.k1 || "Unknown";
       const ot = r.k2 || "Unknown";
       by[k] ||= { department: k, Yes: 0, No: 0 };
-      by[k][ot] = r.attrition_rate;
+      by[k][ot] = r.attrition_rate; // using rate for a stacked comparison
     }
     return Object.values(by);
   }, [deptOvertime]);
@@ -115,194 +94,255 @@ export default function AnalyticsDashboard() {
       .sort((a,b) => Math.abs(b.corr) - Math.abs(a.corr));
   }, [corrs]);
 
-  if (err) return <pre style={{whiteSpace:"pre-wrap", color:"crimson"}}>{err}</pre>;
+  if (err) {
+    return (
+      <pre className="card span-12" style={{ padding:16, whiteSpace:"pre-wrap", color:"#ffb4b4", borderColor:"rgba(255,0,0,.25)" }}>
+        {err}
+      </pre>
+    );
+  }
 
   return (
-    <div style={{ padding: "1.5rem", maxWidth: 1200, margin: "0 auto" }}>
-      <h2>HR Attrition Analytics — concurrent loading</h2>
-      {loading && <p style={{opacity:.7}}>Loading data…</p>}
-      {summary && (
-        <div style={{ margin: "12px 0", fontWeight: 600 }}>
-          Total: {summary.n_total} · Left: {summary.n_left} · Attrition rate: {(summary.attrition_rate*100).toFixed(1)}%
+    <>
+      {/* KPIs */}
+      <div className="grid">
+        <div className="kpis span-12">
+          <MetricCard label="Employees" value={summary ? summary.n_total : "—"} />
+          <MetricCard label="Left (count)" value={summary ? summary.n_left : "—"} />
+          <MetricCard
+            label="Attrition rate"
+            value={summary ? `${(summary.attrition_rate*100).toFixed(1)}%` : "—"}
+            hint="Company-wide"
+          />
         </div>
-      )}
+      </div>
 
-      <Section title="Attrition by Department">
-        <ChartOrEmpty data={byDept}>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={byDept}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="key" /><YAxis /><Tooltip />
-              <Bar dataKey="attrition_rate" />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartOrEmpty>
-      </Section>
+      {/* Controls */}
+      <div className="grid">
+        <div className="card span-12">
+          <div className="card-head">
+            <h3>Dashboard Controls</h3>
+            <div className="controls">
+              <label className="hint">Age bins</label>
+              <input className="input" type="number" min="3" max="20" value={binsAge} onChange={e=>setBinsAge(+e.target.value||9)} />
+              <label className="hint">Income bins</label>
+              <input className="input" type="number" min="5" max="40" value={binsInc} onChange={e=>setBinsInc(+e.target.value||20)} />
+              <label className="hint">Scatter samples</label>
+              <input className="input" type="number" min="200" max="2000" value={scatterN} onChange={e=>setScatterN(+e.target.value||800)} />
+            </div>
+          </div>
+          <div className="card-body hint">
+            Tune bucket sizes & sample size. Charts update instantly.
+          </div>
+        </div>
+      </div>
 
-      <Section title="Attrition by Job Role">
-        <ChartOrEmpty data={byRole}>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={byRole}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="key" /><YAxis /><Tooltip />
-              <Bar dataKey="attrition_rate" />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartOrEmpty>
-      </Section>
+      {/* Charts */}
+      <div className="grid">
+        {/* Department */}
+        <ChartCard title="Attrition by Department" className="span-6">
+          <ChartWrap>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={byDept}>
+                <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                <XAxis dataKey="key" stroke={axisStroke} />
+                <YAxis stroke={axisStroke} />
+                <Tooltip contentStyle={{ background:"#0f162c", border:"1px solid rgba(255,255,255,.12)", color:textColor }} />
+                <Bar dataKey="attrition_rate">
+                  {byDept.map((_,i)=>(<Cell key={i} fill={palette[i % palette.length]} />))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartWrap>
+        </ChartCard>
 
-      <Section title="Monthly Income Distribution (bins)">
-        <ChartOrEmpty data={incHist}>
-          <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={incHist}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="bucket" /><YAxis /><Tooltip />
-              <Area dataKey="n" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </ChartOrEmpty>
-      </Section>
+        {/* Role */}
+        <ChartCard title="Attrition by Job Role" className="span-6">
+          <ChartWrap>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={byRole}>
+                <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                <XAxis dataKey="key" stroke={axisStroke} />
+                <YAxis stroke={axisStroke} />
+                <Tooltip contentStyle={{ background:"#0f162c", border:"1px solid rgba(255,255,255,.12)", color:textColor }} />
+                <Bar dataKey="attrition_rate">
+                  {byRole.map((_,i)=>(<Cell key={i} fill={palette[(i+2) % palette.length]} />))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartWrap>
+        </ChartCard>
 
-      <Section title="Attrition vs Tenure (Years at Company)">
-        <ChartOrEmpty data={tenure}>
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={tenure}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="years_at_company" /><YAxis /><Tooltip />
-              <Line dataKey="attrition_rate" dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartOrEmpty>
-      </Section>
+        {/* Income histogram */}
+        <ChartCard title="Monthly Income Distribution (bins)" className="span-6" right={<span className="legend"><span className="sw" style={{background:palette[0]}}></span>Count</span>}>
+          <ChartWrap>
+            <ResponsiveContainer width="100%" height={280}>
+              <AreaChart data={incHist}>
+                <defs>
+                  <linearGradient id="incGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={palette[0]} stopOpacity="0.9"/>
+                    <stop offset="100%" stopColor={palette[0]} stopOpacity="0.15"/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                <XAxis dataKey="bucket" stroke={axisStroke} />
+                <YAxis stroke={axisStroke} />
+                <Tooltip contentStyle={{ background:"#0f162c", border:"1px solid rgba(255,255,255,.12)", color:textColor }} />
+                <Area dataKey="n" fill="url(#incGrad)" stroke={palette[0]} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </ChartWrap>
+        </ChartCard>
 
-      <Section title="Attrition rate by Department × OverTime">
-        <ChartOrEmpty data={deptOvertimePivot}>
-          <ResponsiveContainer width="100%" height={320}>
-            <BarChart data={deptOvertimePivot}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="department" /><YAxis /><Tooltip /><Legend />
-              <Bar dataKey="Yes" stackId="a" /><Bar dataKey="No" stackId="a" />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartOrEmpty>
-      </Section>
+        {/* Tenure line */}
+        <ChartCard title="Attrition vs Tenure (Years at Company)" className="span-6">
+          <ChartWrap>
+            <ResponsiveContainer width="100%" height={280}>
+              <LineChart data={tenure}>
+                <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                <XAxis dataKey="years_at_company" stroke={axisStroke} />
+                <YAxis stroke={axisStroke} />
+                <Tooltip contentStyle={{ background:"#0f162c", border:"1px solid rgba(255,255,255,.12)", color:textColor }} />
+                <Line dataKey="attrition_rate" dot={false} stroke={palette[5]} strokeWidth={2.2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </ChartWrap>
+        </ChartCard>
 
-      <Section title="Age vs Monthly Income (scatter)">
-        <ChartOrEmpty data={scatter}>
-          <ResponsiveContainer width="100%" height={320}>
-            <ScatterChart>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" dataKey="age" />
-              <YAxis type="number" dataKey="monthly_income" />
-              <ZAxis type="category" dataKey="left_flag" range={[60,60]} />
-              <Tooltip /><Legend />
-              <Scatter data={scatter.filter(d => d.left_flag === 1)} name="Left" />
-              <Scatter data={scatter.filter(d => d.left_flag === 0)} name="Stayed" />
-            </ScatterChart>
-          </ResponsiveContainer>
-        </ChartOrEmpty>
-      </Section>
+        {/* Dept × Overtime (stacked rate) */}
+        <ChartCard title="Attrition rate by Department × Overtime" className="span-8" right={
+          <div className="legend">
+            <span className="sw" style={{background:yesColor}}></span>Overtime: Yes
+            <span className="sw" style={{background:noColor}}></span>Overtime: No
+          </div>
+        }>
+          <ChartWrap>
+            <ResponsiveContainer width="100%" height={340}>
+              <BarChart data={deptOvertimePivot}>
+                <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                <XAxis dataKey="department" stroke={axisStroke} />
+                <YAxis stroke={axisStroke} />
+                <Tooltip contentStyle={{ background:"#0f162c", border:"1px solid rgba(255,255,255,.12)", color:textColor }} />
+                <Legend />
+                <Bar dataKey="Yes" stackId="ot" fill={yesColor} />
+                <Bar dataKey="No"  stackId="ot" fill={noColor} />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartWrap>
+        </ChartCard>
 
-      <Section title="Satisfaction Profile (Radar) — Stayed vs Left">
-        <ChartOrEmpty data={radar}>
-          <ResponsiveContainer width="100%" height={360}>
-            <RadarChart data={radar}>
-              <PolarGrid /><PolarAngleAxis dataKey="group_name" /><PolarRadiusAxis />
-              <Radar name="Environment" dataKey="environment" />
-              <Radar name="Job" dataKey="job" />
-              <Radar name="Relationship" dataKey="relationship" />
-              <Radar name="Work/Life" dataKey="work_life" />
-              <Legend />
-            </RadarChart>
-          </ResponsiveContainer>
-        </ChartOrEmpty>
-      </Section>
+        {/* Gender pie */}
+        <ChartCard title="Gender Split" className="span-4">
+          <ChartWrap>
+            <ResponsiveContainer width="100%" height={340}>
+              <PieChart>
+                <Tooltip contentStyle={{ background:"#0f162c", border:"1px solid rgba(255,255,255,.12)", color:textColor }} />
+                <Legend />
+                <Pie data={genderPie} dataKey="n" nameKey="gender" outerRadius={120} label>
+                  {genderPie.map((_,i)=>(<Cell key={i} fill={palette[i % palette.length]} />))}
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
+          </ChartWrap>
+        </ChartCard>
 
-      <Section title="Gender Split & Attrition rate (Pie)">
-        <ChartOrEmpty data={genderPie}>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart><Tooltip /><Legend />
-              <Pie data={genderPie} dataKey="n" nameKey="gender" outerRadius={120} label />
-            </PieChart>
-          </ResponsiveContainer>
-        </ChartOrEmpty>
-      </Section>
+        {/* Scatter */}
+        <ChartCard title="Age vs Monthly Income (colored by attrition)" className="span-8">
+          <ChartWrap>
+            <ResponsiveContainer width="100%" height={360}>
+              <ScatterChart>
+                <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                <XAxis type="number" dataKey="age" stroke={axisStroke} />
+                <YAxis type="number" dataKey="monthly_income" stroke={axisStroke} />
+                <ZAxis type="category" dataKey="left_flag" range={[80,80]} />
+                <Tooltip
+                  contentStyle={{ background:"#0f162c", border:"1px solid rgba(255,255,255,.12)", color:textColor }}
+                  formatter={(v, name) => [v, name === "monthly_income" ? "Monthly Income" : name === "age" ? "Age" : "Left?"]}
+                />
+                <Legend />
+                <Scatter data={scatter.filter(d => d.left_flag === 1)} name="Left"   fill={yesColor} />
+                <Scatter data={scatter.filter(d => d.left_flag === 0)} name="Stayed" fill={noColor} />
+              </ScatterChart>
+            </ResponsiveContainer>
+          </ChartWrap>
+        </ChartCard>
 
-      <Section title="Correlation with Attrition (Yes=1, No=0)">
-        <CorrelationTable rows={corrSorted} />
-      </Section>
+        {/* Radar */}
+        <ChartCard title="Satisfaction Profile — Stayed vs Left" className="span-4">
+          <ChartWrap>
+            <ResponsiveContainer width="100%" height={360}>
+              <RadarChart data={radar}>
+                <PolarGrid stroke={gridStroke} />
+                <PolarAngleAxis dataKey="group_name" stroke={axisStroke} />
+                <PolarRadiusAxis stroke={axisStroke} />
+                <Radar name="Environment" dataKey="environment" stroke={palette[1]} fill={palette[1]} fillOpacity={0.25} />
+                <Radar name="Job"         dataKey="job"         stroke={palette[2]} fill={palette[2]} fillOpacity={0.25} />
+                <Radar name="Relation"    dataKey="relationship"stroke={palette[3]} fill={palette[3]} fillOpacity={0.25} />
+                <Radar name="Work/Life"   dataKey="work_life"   stroke={palette[4]} fill={palette[4]} fillOpacity={0.25} />
+                <Legend />
+              </RadarChart>
+            </ResponsiveContainer>
+          </ChartWrap>
+        </ChartCard>
 
-      <Section title="Income spread by Job Role (five-number summary)">
-        <ChartOrEmpty data={boxIncome}>
-          <ResponsiveContainer width="100%" height={330}>
-            <BarChart data={boxIncome}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="job_role" /><YAxis /><Tooltip /><Legend />
-              <Bar dataKey="min" stackId="b" /><Bar dataKey="q1" stackId="b" />
-              <Bar dataKey="median" stackId="b" /><Bar dataKey="q3" stackId="b" />
-              <Bar dataKey="max" stackId="b" />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartOrEmpty>
-      </Section>
-    </div>
+        {/* Correlations */}
+        <ChartCard title="Top correlations with Attrition (Yes=1, No=0)" className="span-6">
+          <div style={{ overflowX:"auto" }}>
+            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:14 }}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Feature</th>
+                  <th style={thStyle}>Correlation</th>
+                </tr>
+              </thead>
+              <tbody>
+                {corrSorted.map((r)=>(
+                  <tr key={r.feature} style={{ borderBottom:"1px solid rgba(255,255,255,.06)" }}>
+                    <td style={tdStyle}>{r.feature}</td>
+                    <td style={tdStyle}>
+                      <span style={{ color: (r.corr ?? 0)>0 ? yesColor : noColor, fontWeight:700 }}>
+                        {r.corr?.toFixed(3) ?? "n/a"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="hint" style={{ marginTop:8 }}>
+              Positive = more likely to leave as the feature increases; Negative = less likely.
+            </p>
+          </div>
+        </ChartCard>
+
+        {/* Income five-number summary — visualized as stacked segments */}
+        <ChartCard title="Income spread by Job Role (five-number summary)" className="span-6">
+          <ChartWrap>
+            <ResponsiveContainer width="100%" height={330}>
+              <BarChart data={boxIncome}>
+                <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                <XAxis dataKey="job_role" stroke={axisStroke} />
+                <YAxis stroke={axisStroke} />
+                <Tooltip contentStyle={{ background:"#0f162c", border:"1px solid rgba(255,255,255,.12)", color:textColor }}
+                  formatter={(v, name) => {
+                    const labels = { min:"Min", q1:"Q1", median:"Median", q3:"Q3", max:"Max" };
+                    return [v, labels[name] || name];
+                  }}
+                />
+                <Legend />
+                {/* Stack to depict cumulative spread; not a true box, but intuitive */}
+                <Bar dataKey="min"    stackId="spread" fill={palette[0]} />
+                <Bar dataKey="q1"     stackId="spread" fill={palette[1]} />
+                <Bar dataKey="median" stackId="spread" fill={palette[2]} />
+                <Bar dataKey="q3"     stackId="spread" fill={palette[3]} />
+                <Bar dataKey="max"    stackId="spread" fill={palette[4]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartWrap>
+          <p className="hint" style={{ marginTop:8, marginBottom:0 }}>
+            We’ll swap this for a true box/violin plot in a later pass; this conveys spread segments now.
+          </p>
+        </ChartCard>
+      </div>
+    </>
   );
-}
-
-function Section({ title, children }) {
-  return (
-    <section style={{ margin: "24px 0" }}>
-      <h3>{title}</h3>
-      {children}
-    </section>
-  );
-}
-
-function ChartOrEmpty({ data, children }) {
-  if (!data || data.length === 0) return <div style={{opacity:.6}}>Loading…</div>;
-  return children;
-}
-
-function CorrelationTable({ rows }) {
-  const [sort, setSort] = useState({ key: "corr", dir: "desc" });
-  const sorted = useMemo(() => {
-    const r = [...rows];
-    r.sort((a,b) => {
-      const ka = sort.key === "feature" ? a.feature : a.corr ?? -999;
-      const kb = sort.key === "feature" ? b.feature : b.corr ?? -999;
-      if (ka < kb) return sort.dir === "asc" ? -1 : 1;
-      if (ka > kb) return sort.dir === "asc" ? 1 : -1;
-      return 0;
-    });
-    return r;
-  }, [rows, sort]);
-
-  const toggle = (key) => setSort(s => s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "desc" });
-
-  return (
-    <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr>
-            <Th onClick={() => toggle("feature")}>Feature</Th>
-            <Th onClick={() => toggle("corr")}>Correlation</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((r) => (
-            <tr key={r.feature}>
-              <Td>{r.feature}</Td>
-              <Td>{r.corr !== null ? r.corr.toFixed(3) : "n/a"}</Td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-function Th({ children, onClick }) {
-  return <th onClick={onClick} style={{ cursor:"pointer", textAlign:"left", borderBottom:"1px solid #ddd", padding:"6px" }}>{children}</th>;
-}
-function Td({ children }) {
-  return <td style={{ borderBottom:"1px solid #eee", padding:"6px" }}>{children}</td>;
 }

@@ -2,12 +2,24 @@ import AnalyticsDashboard from "./components/AnalyticsDashboard";
 
 export default function App() {
   return (
-    <main style={{ maxWidth: 1200, margin: "0 auto", padding: "2rem" }}>
-      <h1>HR Attrition Analytics — v3</h1>
-      <p style={{opacity:.7}}>
-        Using API base: {import.meta.env.VITE_API_BASE || "(missing)"} 
-      </p>
+    <div className="page">
+      <header className="page-header glass">
+        <div className="brand">
+          <span className="dot" />
+          <h1>CineScope • HR Attrition Analytics</h1>
+        </div>
+        <div className="sub">
+          <span className="badge">React</span>
+          <span className="badge">FastAPI</span>
+          <span className="badge">Postgres (Neon)</span>
+        </div>
+      </header>
+
       <AnalyticsDashboard />
-    </main>
+
+      <footer className="page-footer">
+        <div>API: {import.meta.env.VITE_API_BASE || "(missing)"} · © {new Date().getFullYear()}</div>
+      </footer>
+    </div>
   );
 }

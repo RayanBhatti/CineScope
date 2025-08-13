@@ -149,7 +149,6 @@ export default function AnalyticsDashboard() {
   }, [boxIncome]);
   const maxIncome = useMemo(()=>incomeBoxData.reduce((m,d)=>Math.max(m,d.max||0),0),[incomeBoxData]);
 
-  // === NEW: clean, sorted series for the new charts ===
   const attrVsMinIncSorted = useMemo(
     () => (Array.isArray(attrVsMinInc) ? [...attrVsMinInc] : [])
             .filter(d => Number.isFinite(+d.min_income) && Number.isFinite(+d.attrition_rate))
@@ -164,14 +163,55 @@ export default function AnalyticsDashboard() {
     [attrByEmpIdx]
   );
 
-  const insights = useMemo(() => {
-    const topDept = deptTop3[0];
-    const topRole = roleByRate[0];
-    return [
-      { label: "Highest attrition by department", text: topDept ? `${topDept.key} (${fmtPct(topDept.attrition_rate)})` : "—" },
-      { label: "Role with highest attrition",     text: topRole ? `${topRole.key} (${fmtPct(topRole.attrition_rate)})` : "—" },
-    ];
-  }, [deptTop3, roleByRate]);
+// --- Key Insights (4 bubbles) ---
+const insights = useMemo(() => {
+  const overall = summary?.attrition_rate ?? null;
+
+  const deptSorted = (dept || [])
+    .map(d => ({
+      key: pick(d?.k1, d?.key, d?.department, d?.Department, d?.name, "Unknown"),
+      rate: Number(pick(d?.attrition_rate, d?.rate, d?.value, d?.attritionRate, 0)) || 0
+    }))
+    .sort((a,b)=> b.rate - a.rate);
+
+  const roleSorted = (role || [])
+    .map(d => ({
+      key: pick(d?.k1, d?.key, d?.job_role, d?.Role, d?.name, "Unknown"),
+      rate: Number(pick(d?.attrition_rate, d?.rate, d?.value, d?.attritionRate, 0)) || 0
+    }))
+    .sort((a,b)=> b.rate - a.rate);
+
+  // gender majority (by count)
+  const g = Array.isArray(gender) ? gender : [];
+  const tot = g.reduce((s, x) => s + (Number(pick(x?.n, x?.count, x?.value, 0)) || 0), 0);
+  const maj = g
+    .map(x => ({
+      label: pick(x?.gender, x?.k1, x?.name, "Unknown"),
+      n: Number(pick(x?.n, x?.count, x?.value, 0)) || 0
+    }))
+    .sort((a,b)=> b.n - a.n)[0];
+  const majPct = tot ? `${Math.round((maj?.n || 0) * 100 / tot)}%` : null;
+
+  return [
+    {
+      label: "Overall attrition rate",
+      text: overall != null ? `${(overall * 100).toFixed(1)}%` : "—",
+    },
+    {
+      label: "Highest attrition department",
+      text: deptSorted[0] ? `${deptSorted[0].key} (${(deptSorted[0].rate*100).toFixed(1)}%)` : "—",
+    },
+    {
+      label: "Highest attrition role",
+      text: roleSorted[0] ? `${roleSorted[0].key} (${(roleSorted[0].rate*100).toFixed(1)}%)` : "—",
+    },
+    {
+      label: "Gender majority",
+      text: maj ? `${maj.label} (${majPct ?? "—"})` : "—",
+    },
+  ];
+}, [summary, dept, role, gender]);
+
 
   return (
     <>

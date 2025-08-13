@@ -21,7 +21,25 @@ const tickProps = { fill: axisStroke, fontSize: 12 };
 /* Robust field picking (prevents "Unknown" when API uses different keys) */
 const pick = (...vals) => vals.find(v => v !== undefined && v !== null && v !== "");
 
-/* KPI (inline) */
+/* Tiny toggleable tooltip */
+function InfoTip({ text }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="infotip">
+      <button className="infotip-btn" aria-label="How attrition is calculated"
+        onClick={() => setOpen(v => !v)}>
+        ⓘ
+      </button>
+      {open && (
+        <div className="infotip-pop">
+          {text}
+        </div>
+      )}
+    </span>
+  );
+}
+
+/* KPI */
 function KPI({ label, value, hint }) {
   return (
     <div className="kpi">
@@ -70,7 +88,7 @@ export default function AnalyticsDashboard() {
           endpoints.tenure(40).then(setTenure),
           endpoints.scatter(1200).then(setScatter),
           endpoints.corrs().then(setCorrs),
-          endpoints.genderPie().then(setGender) // correct API call
+          endpoints.genderPie().then(setGender)
         ]);
         if (cancelled) return;
       } catch (e) {
@@ -100,25 +118,13 @@ export default function AnalyticsDashboard() {
   const travelByRate = useMemo(() => (travel || []).map(normRateRow)
     .sort((a,b)=> (b.attrition_rate ?? 0) - (a.attrition_rate ?? 0)), [travel]);
 
-  // Department × Overtime pivot (kept if used elsewhere)
-  const deptOvertimePivot = useMemo(() => {
-    const by = {};
-    for (const r of (deptOT || [])) {
-      const k = pick(r?.k1, r?.department, r?.Department, r?.name, r?.key, "Unknown");
-      const ot = pick(r?.k2, r?.overtime, r?.Overtime, "Unknown");
-      by[k] ||= { department: k, Yes: 0, No: 0 };
-      by[k][ot] = Number(pick(r?.attrition_rate, r?.rate, r?.value, 0)) || 0;
-    }
-    return Object.values(by);
-  }, [deptOT]);
-
   // Gender pie
   const genderPie = useMemo(() => (gender || []).map(g => ({
     gender: pick(g?.gender, g?.k1, g?.name, "Unknown"),
     value: Number(pick(g?.count, g?.value, g?.n, 0)) || 0
   })), [gender]);
 
-  // Age/Income histograms (bin label may be k1|bin|bucket|label)
+  // Age/Income histograms normalized
   const ageHistNorm = useMemo(() => (ageHist || []).map(d => ({
     k1: pick(d?.k1, d?.bin, d?.bucket, d?.label, ""),
     count: Number(pick(d?.count, d?.n, d?.value, 0)) || 0
@@ -129,13 +135,13 @@ export default function AnalyticsDashboard() {
     count: Number(pick(d?.count, d?.n, d?.value, 0)) || 0
   })), [incHist]);
 
-  // Tenure line (x may be k1|bin|bucket|label; y may be attrition_rate|rate|value)
+  // Tenure line
   const tenureSeries = useMemo(() => (tenure || []).map(d => ({
     k1: pick(d?.k1, d?.bin, d?.bucket, d?.label, ""),
     attrition_rate: Number(pick(d?.attrition_rate, d?.rate, d?.value, 0)) || 0
   })), [tenure]);
 
-  // Scatter: ensure existence
+  // Scatter
   const scatterData = useMemo(() => (scatter || []).map(s => ({
     age: Number(pick(s?.age, s?.k1, s?.x, 0)) || 0,
     monthly_income: Number(pick(s?.monthly_income, s?.income, s?.y, 0)) || 0,
@@ -172,19 +178,26 @@ export default function AnalyticsDashboard() {
       <div className="container">
         <header className="header">
           <h1 className="title">CineScope Dashboard</h1>
-          <p className="subtitle">HR ATTRITION ANALYTICS</p>
-        </header>
+          <p className="subtitle">
+            HR ATTRITION ANALYTICS{" "}
+            <InfoTip text={
+              <span>
+                Attrition rate = <strong>count(Attrition = "Yes")</strong> ÷ <strong>total employees</strong>.
+                For example, 0.16 ≈ 16% of employees left.
+              </span>
+            } />
+          </p>
 
-        {/* Explanation */}
-        <div className="card" style={{marginBottom:14}}>
-          <div className="card-head" style={{paddingBottom:"0.5rem"}}><h3>How attrition is calculated</h3></div>
-          <div className="card-body">
-            <p className="hint" style={{margin:0}}>
-              Attrition rate here is the share of employees with <strong>Attrition = "Yes"</strong> divided by <strong>total employees</strong>.
-              A value of 0.16 means roughly 16% of employees in this dataset left their roles.
-            </p>
+          {/* View Source Code button with GitHub logo */}
+          <div className="source inline">
+            <a className="btn btn-github" href="https://github.com/RayanBhatti/CineScope" target="_blank" rel="noreferrer">
+              <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" style={{marginRight:8}}>
+                <path fill="currentColor" d="M8 .2a8 8 0 0 0-2.53 15.6c.4.07.55-.17.55-.38v-1.33c-2.25.49-2.73-1.08-2.73-1.08-.36-.9-.88-1.14-.88-1.14-.72-.49.06-.48.06-.48.79.06 1.2.82 1.2.82.71 1.21 1.86.86 2.31.66.07-.52.28-.86.51-1.06-1.8-.2-3.69-.9-3.69-4a3.15 3.15 0 0 1 .84-2.18c-.08-.2-.37-1.01.08-2.1 0 0 .69-.22 2.25.83a7.78 7.78 0 0 1 4.1 0c1.56-1.05 2.24-.83 2.24-.83.45 1.09.16 1.9.08 2.1.53.59.84 1.34.84 2.18 0 3.11-1.9 3.79-3.71 3.99.29.25.54.73.54 1.48v2.2c0 .21.14.46.55.38A8 8 0 0 0 8 .2Z"/>
+              </svg>
+              View Source Code
+            </a>
           </div>
-        </div>
+        </header>
 
         {/* KPIs */}
         <div className="card" style={{marginBottom:14}}>
@@ -195,6 +208,20 @@ export default function AnalyticsDashboard() {
               <KPI label="Left" value={summary?.n_left} />
               <KPI label="Attrition rate" value={summary ? `${(summary.attrition_rate*100).toFixed(1)}%` : "—"} hint="Dataset-wide" />
             </div>
+          </div>
+        </div>
+
+        {/* Key Insights */}
+        <div className="card" style={{ marginBottom: 14 }}>
+          <div className="card-head"><h3>Key Insights</h3></div>
+          <div className="card-body">
+            <ul style={{ listStyle: "none", paddingLeft: 0, margin: 0 }}>
+              {insights.map((ins, i) => (
+                <li key={i} style={{ marginBottom: "0.5rem" }}>
+                  <strong>{ins.label}:</strong> {ins.text}
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
 

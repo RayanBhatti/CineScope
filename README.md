@@ -1,6 +1,12 @@
 # CineScope
 
-CineScope is a full-stack, data-driven analytics application built using **React**, **FastAPI**, and **PostgreSQL**. It is designed to provide an interactive and visually engaging platform for exploring and analyzing datasets, offering a variety of charts and visualizations to help uncover patterns, trends, and relationships in the data.
+CineScope is a full-stack, data-driven analytics application built using **React**, **FastAPI**, and **PostgreSQL**. It is designed to provide an interactive and visually engaging platform for exploring and analyzing datasets, offering a variety of charts and visualizations to help uncover patterns, trends, and relationships in the data. This app is designed to be viewed on a desktop computer and is not compatible with mobile viewports.
+
+## [Live Demo →](https://cine-scope-azure.vercel.app/)
+
+## About the Dataset
+
+Uncover the factors that lead to employee attrition and explore important questions such as ‘show me a breakdown of distance from home by job role and attrition’ or ‘compare average monthly income by education and attrition’. This is a fictional data set created by IBM data scientists.
 
 ---
 

@@ -4,7 +4,6 @@ import { palette, yesColor, noColor, gridStroke, axisStroke, textColor } from ".
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   LineChart, Line, AreaChart, Area, ScatterChart, Scatter, ZAxis,
-  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
   PieChart, Pie, Legend, Cell
 } from "recharts";
 
@@ -12,14 +11,14 @@ import {
 const tooltipStyle = { background: "var(--tooltip-bg)", border: "1px solid var(--tooltip-bd)", color: textColor };
 const tooltipLabelStyle = { color: textColor };
 const tooltipItemStyle  = { color: textColor };
+
 /* Format helpers */
 const fmtPct = (v) => (v==null || isNaN(v) ? "n/a" : `${(v*100).toFixed(1)}%`);
 const fmtPct0 = (v) => (v==null || isNaN(v) ? "n/a" : `${(v*100).toFixed(0)}%`);
 const fmtCurrency = (v) => (v==null || isNaN(v) ? "n/a" : Intl.NumberFormat(undefined, { style:"currency", currency:"USD", maximumFractionDigits:0 }).format(v));
 const tickProps = { fill: axisStroke, fontSize: 12 };
 
-
-/* KPI component (light inline to keep file self-contained) */
+/* KPI component (inline to keep file self-contained) */
 function KPI({ label, value, hint }) {
   return (
     <div className="kpi">
@@ -46,7 +45,6 @@ export default function AnalyticsDashboard() {
   const [tenure, setTenure] = useState([]);
   const [scatter, setScatter] = useState([]);
   const [corrs, setCorrs] = useState([]);
-  const [boxIncome, setBoxIncome] = useState([]);
   const [gender, setGender] = useState([]);
 
   const [err, setErr] = useState("");
@@ -70,30 +68,43 @@ export default function AnalyticsDashboard() {
           endpoints.tenure(40).then(setTenure),
           endpoints.scatter(1200).then(setScatter),
           endpoints.corrs().then(setCorrs),
-          endpoints.boxIncome().then(setBoxIncome),
-          endpoints.genderPie().then(setGender),
+          endpoints.genderPie().then(setGender) // ensure correct API method
         ];
-        const res = await Promise.allSettled(tasks);
-        const firstErr = res.find(r => r.status === "rejected");
-        if (firstErr && !cancelled) setErr(String(firstErr.reason));
+        await Promise.all(tasks);
+        if (cancelled) return;
       } catch (e) {
-        if (!cancelled) setErr(String(e));
+        if (!cancelled) setErr(String(e?.message || e));
       }
     })();
     return () => { cancelled = true; };
   }, []);
 
-  // derived, ordered datasets
-  const deptByRate = useMemo(() => [...dept].sort((a,b)=> (b.attrition_rate??0)-(a.attrition_rate??0)), [dept]);
-  const roleByRate = useMemo(() => [...role].sort((a,b)=> (b.attrition_rate??0)-(a.attrition_rate??0)), [role]);
-  const eduByCount = useMemo(() => [...edu].sort((a,b)=> (b.n??0)-(a.n??0)), [edu]);
-  const travelByCount = useMemo(() => [...travel].sort((a,b)=> (b.n??0)-(a.n??0)), [travel]);
-  const overtimeByCount = useMemo(() => [...overtime].sort((a,b)=> (b.n??0)-(a.n??0)), [overtime]);
+  // ——— transforms & helpers ———
 
-  // department × overtime pivot
+  const deptByRate = useMemo(() => {
+    const arr = (dept || []).map(d => ({ key: d.k1 || "Unknown", attrition_rate: d.attrition_rate ?? 0 }));
+    return arr.sort((a,b)=> (b.attrition_rate ?? 0) - (a.attrition_rate ?? 0));
+  }, [dept]);
+
+  const roleByRate = useMemo(() => {
+    const arr = (role || []).map(d => ({ key: d.k1 || "Unknown", attrition_rate: d.attrition_rate ?? 0 }));
+    return arr.sort((a,b)=> (b.attrition_rate ?? 0) - (a.attrition_rate ?? 0));
+  }, [role]);
+
+  const eduByRate = useMemo(() => {
+    const arr = (edu || []).map(d => ({ key: d.k1 || "Unknown", attrition_rate: d.attrition_rate ?? 0 }));
+    return arr.sort((a,b)=> (b.attrition_rate ?? 0) - (a.attrition_rate ?? 0));
+  }, [edu]);
+
+  const travelByRate = useMemo(() => {
+    const arr = (travel || []).map(d => ({ key: d.k1 || "Unknown", attrition_rate: d.attrition_rate ?? 0 }));
+    return arr.sort((a,b)=> (b.attrition_rate ?? 0) - (a.attrition_rate ?? 0));
+  }, [travel]);
+
+  // (kept in case you still use it elsewhere)
   const deptOvertimePivot = useMemo(() => {
     const by = {};
-    for (const r of deptOT) {
+    for (const r of (deptOT || [])) {
       const k = r.k1 || "Unknown";
       const ot = r.k2 || "Unknown";
       by[k] ||= { department: k, Yes: 0, No: 0 };
@@ -102,78 +113,51 @@ export default function AnalyticsDashboard() {
     return Object.values(by);
   }, [deptOT]);
 
-  // intelligent insights
+  // Insights
   const insights = useMemo(() => {
     const topDept = deptByRate.slice(0,1)[0];
     const lowDept = deptByRate.slice(-1)[0];
     const topRole = roleByRate.slice(0,1)[0];
-    const otYes = overtimeByCount.find(d=>d.key==="Yes");
-    const otNo  = overtimeByCount.find(d=>d.key==="No");
-    const otDelta = otYes && otNo ? (otYes.attrition_rate - otNo.attrition_rate) : null;
 
-    // income skew: where most employees cluster
-    const incPeak = [...incHist].sort((a,b)=> (b.n??0)-(a.n??0))[0];
-
-    // tenure: early exits?
-    const early = tenure.find(t => t.years_at_company === 0 || t.years_at_company === 1);
+    const incomeCorr = (corrs || []).find(c => c.feature === "monthly_income");
+    const incomeText = (() => {
+      if (!incomeCorr || incomeCorr.corr == null) return "Higher salaries show little direct correlation with attrition in this dataset.";
+      const strength = Math.abs(incomeCorr.corr);
+      const dir = incomeCorr.corr > 0 ? "increase" : "decrease";
+      const descr = strength >= 0.3 ? "a strong" : strength >= 0.15 ? "a moderate" : "a weak";
+      return `Monthly income shows ${descr} ${dir} in attrition (corr=${incomeCorr.corr.toFixed(2)}).`;
+    })();
 
     return [
-      {
-        label: "Department risk",
-        text: topDept
-          ? `${topDept.key} shows the highest attrition rate at about ${(topDept.attrition_rate*100).toFixed(1)}%. ${lowDept ? `${lowDept.key} is the lowest.` : ""}`
-          : "Department-level rates are similar in this dataset."
-      },
-      {
-        label: "Role sensitivity",
-        text: topRole
-          ? `The role ${topRole.key} has the highest attrition rate around ${(topRole.attrition_rate*100).toFixed(1)}%.`
-          : "Role-level differences are limited in this dataset."
-      },
-      {
-        label: "Impact of overtime",
-        text: otDelta!=null
-          ? `Employees reporting overtime have a higher attrition rate by approximately ${(otDelta*100).toFixed(1)} percentage points.`
-          : "No strong overtime signal detected."
-      },
-      {
-        label: "Income distribution",
-        text: incPeak
-          ? `Employee incomes concentrate around bucket ${incPeak.bucket} with ${incPeak.n} employees; attrition exists across bands.`
-          : "Income spread appears even across buckets."
-      },
-      {
-        label: "Tenure pattern",
-        text: early
-          ? `Attrition risk is highest in the early years at the company and tends to taper with tenure.`
-          : "Attrition risk by tenure is stable across years."
-      }
+      { label: "Highest attrition by department", text: topDept ? `${topDept.key} (${fmtPct(topDept.attrition_rate)})` : "—" },
+      { label: "Lowest attrition by department",  text: lowDept ? `${lowDept.key} (${fmtPct(lowDept.attrition_rate)})` : "—" },
+      { label: "Role with highest attrition",     text: topRole ? `${topRole.key} (${fmtPct(topRole.attrition_rate)})` : "—" },
+      { label: "Income & attrition",              text: incomeText }
     ];
-  }, [deptByRate, roleByRate, overtimeByCount, incHist, tenure]);
+  }, [deptByRate, roleByRate, corrs]);
 
-  if (err) {
-    return <pre className="card" style={{padding:16, whiteSpace:"pre-wrap", color:"#ffb4b4"}}>{err}</pre>;
-  }
+  // Gender pie data
+  const genderPie = (gender || []).map((g)=>({
+    gender: g.gender || "Unknown",
+    value: g.count || 0
+  }));
+
+  // ——— render ———
 
   return (
     <>
-      {/* Title + subheading + source code button */}
-      <header className="header">
-        <h1 className="title">CineScope Dashboard</h1>
-        <p className="subtitle">HR ATTRITION ANALYTICS</p>
-        <div className="source">
-          <a className="link" href="https://github.com/RayanBhatti/CineScope" target="_blank" rel="noreferrer">View Source Code</a>
-        </div>
-      </header>
-
-      {/* Explanation */}
       <div className="container">
+        <header className="header">
+          <h1 className="title">CineScope Dashboard</h1>
+          <p className="subtitle">HR ATTRITION ANALYTICS</p>
+        </header>
+
+        {/* Explanation */}
         <div className="card" style={{marginBottom:14}}>
           <div className="card-head" style={{paddingBottom:"0.5rem"}}><h3>How attrition is calculated</h3></div>
           <div className="card-body">
-            <p className="hint" style={{fontSize:14, color:"#d7dcf0"}}>
-              Attrition rate is defined as the share of employees who left the company:
-              <strong> number of employees with Attrition = "Yes" divided by total employees</strong>.
+            <p className="hint" style={{margin:0}}>
+              Attrition rate here is the share of employees with <strong>Attrition = "Yes"</strong> divided by <strong>total employees</strong>.
               A value of 0.16 means roughly 16% of employees in this dataset left their roles.
             </p>
           </div>
@@ -191,33 +175,52 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
 
-        {/* Professional insights */}
-        <div className="card" style={{marginBottom:14}}>
-          <div className="card-head" style={{paddingBottom:"0.5rem"}}><h3>Key insights</h3></div>
-          <div className="card-body">
-            <div className="insights">
-              {insights.map((it, idx)=>(
-                <div key={idx} className="insight">
-                  <div className="label">{it.label}</div>
-                  <div className="text">{it.text}</div>
-                </div>
-              ))}
-            </div>
+        {/* ===== Attrition by Job Role (full width) ===== */}
+        <div className="card" style={{gridColumn:"1 / -1", marginBottom:12}}>
+          <div className="card-head"><h3>Attrition by Job Role</h3></div>
+          <div className="card-body scroll-y" style={{height:520}}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={roleByRate} layout="vertical" margin={{ left: 60 }}>
+                <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" horizontal={true} vertical={false}/>
+                <XAxis type="number" stroke={axisStroke} tick={tickProps} />
+                <YAxis dataKey="key" type="category" stroke={axisStroke} width={260} tick={tickProps} />
+                <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} cursor={{ fill: "rgba(255,255,255,0.08)" }} formatter={(v)=>fmtPct(v)} />
+                <Bar dataKey="attrition_rate">
+                  {roleByRate.map((_,i)=>(<Cell key={i} fill={palette[(i+2)%palette.length]} />))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Dense grid of visuals */}
-        <div className="grid">
-          {/* Departments (all) */}
-          <div className="card" style={{display:"flex", flexDirection:"column"}}>
-            <div className="card-head" style={{paddingBottom:"0.5rem"}}><h3>Attrition by Department</h3></div>
+        {/* ===== NEW ROW: Gender Split (left) + Attrition by Department (right) ===== */}
+        <div className="grid-two" style={{marginBottom:12}}>
+          {/* Gender split */}
+          <div className="card">
+            <div className="card-head"><h3>Gender Split</h3></div>
+            <div className="card-body" style={{height:280}}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Legend />
+                  <Pie data={genderPie} dataKey="value" nameKey="gender" outerRadius={120} label>
+                    {genderPie.map((_,i)=>(<Cell key={i} fill={palette[i % palette.length]} />))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Attrition by Department */}
+          <div className="card">
+            <div className="card-head"><h3>Attrition by Department</h3></div>
             <div className="card-body" style={{height:320}}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={deptByRate}>
                   <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                  <XAxis dataKey="key" stroke={axisStroke}  tick={tickProps} />
-                  <YAxis stroke={axisStroke}  tick={tickProps} />
-                  <Tooltip contentStyle={tooltipStyle}  labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle}  cursor={{ fill: "rgba(255,255,255,0.08)" }} />
+                  <XAxis dataKey="key" stroke={axisStroke} tick={tickProps} />
+                  <YAxis stroke={axisStroke} tick={tickProps} tickFormatter={fmtPct0} />
+                  <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} cursor={{ fill: "rgba(255,255,255,0.08)" }} formatter={(v)=>fmtPct(v)} />
+                  <Legend />
                   <Bar dataKey="attrition_rate">
                     {deptByRate.map((_,i)=>(<Cell key={i} fill={palette[i % palette.length]} />))}
                   </Bar>
@@ -225,234 +228,122 @@ export default function AnalyticsDashboard() {
               </ResponsiveContainer>
             </div>
           </div>
+        </div>
 
-          {/* Roles (all; vertical axis so nothing is clipped; ordered by rate) */}
-          <div className="card" style={{gridColumn:"1 / -1"}}>
-            <div className="card-head" style={{paddingBottom:"0.5rem"}}><h3>Attrition by Job Role</h3></div>
-            <div className="card-body scroll-y" style={{height:520}}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={roleByRate} layout="vertical" margin={{ left: 60 }}>
-                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" horizontal={true} vertical={false}/>
-                  <XAxis type="number" stroke={axisStroke}  tick={tickProps} />
-                  <YAxis dataKey="key" type="category" stroke={axisStroke} width={260} tick={tickProps} />
-                  <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} cursor={{ fill: "rgba(255,255,255,0.08)" }} formatter={(v)=>fmtPct(v)} />
-                  <Bar dataKey="attrition_rate">
-                    {roleByRate.map((_,i)=>(<Cell key={i} fill={palette[(i+2)%palette.length]} />))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Age distribution */}
-          <div className="card" style={{display:"flex", flexDirection:"column"}}>
-            <div className="card-head" style={{paddingBottom:"0.5rem"}}><h3>Age Distribution (bins)</h3></div>
+        {/* ===== Remaining small charts row (keep whatever you had) ===== */}
+        <div className="grid three">
+          {/* Age Distribution (bins) */}
+          <div className="card">
+            <div className="card-head"><h3>Age Distribution (bins)</h3></div>
             <div className="card-body" style={{height:280}}>
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={ageHist}>
                   <defs>
                     <linearGradient id="ageGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={palette[0]} stopOpacity="0.9"/>
-                      <stop offset="100%" stopColor={palette[0]} stopOpacity="0.15"/>
+                      <stop offset="0%" stopColor={palette[2]} stopOpacity="0.9"/>
+                      <stop offset="100%" stopColor={palette[2]} stopOpacity="0.15"/>
                     </linearGradient>
                   </defs>
                   <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                  <XAxis dataKey="bucket" stroke={axisStroke}  tick={tickProps} />
-                  <YAxis stroke={axisStroke}  tick={tickProps} />
-                  <Tooltip contentStyle={tooltipStyle}  labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle}  cursor={{ fill: "rgba(255,255,255,0.08)" }} />
-                  <Area dataKey="n" fill="url(#ageGrad)" stroke={palette[0]} />
+                  <XAxis dataKey="k1" stroke={axisStroke} tick={tickProps} />
+                  <YAxis stroke={axisStroke} tick={tickProps} />
+                  <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
+                  <Area dataKey="count" stroke={palette[2]} fill="url(#ageGrad)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Tenure curve */}
-          <div className="card" style={{display:"flex", flexDirection:"column"}}>
-            <div className="card-head" style={{paddingBottom:"0.5rem"}}><h3>Attrition vs Tenure (Years at Company)</h3></div>
+          {/* Attrition vs Tenure */}
+          <div className="card">
+            <div className="card-head"><h3>Attrition vs Tenure (Years at Company)</h3></div>
             <div className="card-body" style={{height:280}}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={tenure}>
                   <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                  <XAxis dataKey="years_at_company" stroke={axisStroke}  tick={tickProps} />
-                  <YAxis stroke={axisStroke}  tick={tickProps} />
-                  <Tooltip contentStyle={tooltipStyle}  labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle}  cursor={{ fill: "rgba(255,255,255,0.08)" }} />
-                  <Line dataKey="attrition_rate" dot={false} stroke={palette[6]} strokeWidth={2.2} />
+                  <XAxis dataKey="k1" stroke={axisStroke} tick={tickProps} />
+                  <YAxis stroke={axisStroke} tick={tickProps} tickFormatter={fmtPct0} />
+                  <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} formatter={(v)=>fmtPct(v)} />
+                  <Legend />
+                  <Line type="monotone" dataKey="attrition_rate" stroke={palette[6]} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Dept × Overtime */}
-          <div className="card" style={{display:"flex", flexDirection:"column"}}>
-            <div className="card-head" style={{paddingBottom:"0.5rem"}}><h3>Attrition rate by Department × Overtime</h3></div>
-            <div className="card-body" style={{height:320}}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={deptOvertimePivot}>
-                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                  <XAxis dataKey="department" stroke={axisStroke}  tick={tickProps} />
-                  <YAxis stroke={axisStroke}  tick={tickProps} />
-                  <Tooltip contentStyle={tooltipStyle}  labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle}  cursor={{ fill: "rgba(255,255,255,0.08)" }} />
-                  <Legend />
-                  <Bar dataKey="Yes" stackId="a" fill={yesColor} />
-                  <Bar dataKey="No"  stackId="a" fill={noColor} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Monthly income distribution */}
-          <div className="card" style={{display:"flex", flexDirection:"column"}}>
-            <div className="card-head" style={{paddingBottom:"0.5rem"}}><h3>Monthly Income Distribution (bins)</h3></div>
+          {/* Monthly Income Distribution (bins) — keep if you still use it */}
+          <div className="card">
+            <div className="card-head"><h3>Monthly Income Distribution (bins)</h3></div>
             <div className="card-body" style={{height:280}}>
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={incHist}>
                   <defs>
                     <linearGradient id="incGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={palette[5]} stopOpacity="0.9"/>
-                      <stop offset="100%" stopColor={palette[5]} stopOpacity="0.15"/>
+                      <stop offset="0%" stopColor={palette[4]} stopOpacity="0.9"/>
+                      <stop offset="100%" stopColor={palette[4]} stopOpacity="0.15"/>
                     </linearGradient>
                   </defs>
                   <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                  <XAxis dataKey="bucket" stroke={axisStroke}  tick={tickProps} />
-                  <YAxis stroke={axisStroke}  tick={tickProps} />
-                  <Tooltip contentStyle={tooltipStyle}  labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle}  cursor={{ fill: "rgba(255,255,255,0.08)" }} />
-                  <Area dataKey="n" fill="url(#incGrad)" stroke={palette[5]} />
+                  <XAxis dataKey="k1" stroke={axisStroke} tick={tickProps} />
+                  <YAxis stroke={axisStroke} tick={tickProps} />
+                  <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
+                  <Area dataKey="count" stroke={palette[4]} fill="url(#incGrad)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Gender split */}
-          <div className="card" style={{display:"flex", flexDirection:"column"}}>
-            <div className="card-head" style={{paddingBottom:"0.5rem"}}><h3>Gender Split</h3></div>
-            <div className="card-body" style={{height:320}}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Tooltip contentStyle={tooltipStyle}  labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle}  cursor={{ fill: "rgba(255,255,255,0.08)" }} />
-                  <Legend />
-                  <Pie data={gender} dataKey="n" nameKey="gender" outerRadius={120} label>
-                    {gender.map((_,i)=>(<Cell key={i} fill={palette[i % palette.length]} />))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Scatter */}
-          <div className="card" style={{gridColumn:"1 / -1"}}>
-            <div className="card-head" style={{paddingBottom:"0.5rem"}}><h3>Age vs Monthly Income (colored by attrition)</h3></div>
-            <div className="card-body" style={{height:420}}>
-              <ResponsiveContainer width="100%" height="100%">
-                <ScatterChart>
-                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                  <XAxis type="number" dataKey="age" stroke={axisStroke}  domain={[15, 'dataMax']}  tick={tickProps} />
-                  <YAxis type="number" dataKey="monthly_income" stroke={axisStroke}  tick={tickProps} />
-                  <ZAxis type="category" dataKey="left_flag" range={[70,70]} />
-                  <Tooltip contentStyle={tooltipStyle}
-                    formatter={(v, name)=>[v, name==="monthly_income"?"Monthly Income":name==="age"?"Age":"Left?"]} />
-                  <Legend />
-                  <Scatter data={scatter.filter(d=>d.left_flag===1)} name="Left" fill={yesColor} />
-                  <Scatter data={scatter.filter(d=>d.left_flag===0)} name="Stayed" fill={noColor} />
-                </ScatterChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Correlations */}
-          <div className="card" style={{display:"flex", flexDirection:"column"}}>
-            <div className="card-head" style={{paddingBottom:"0.5rem"}}><h3>Correlation with Attrition (Yes=1, No=0)</h3></div>
-            <div className="card-body" style={{overflowX:"auto", maxHeight: 300, overflowY: "auto"}}>
-              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:14 }}>
-                <thead>
-                  <tr>
-                    <th style={{textAlign:"left", padding:"8px 10px", borderBottom:"1px solid rgba(255,255,255,.12)"}}>Feature</th>
-                    <th style={{textAlign:"left", padding:"8px 10px", borderBottom:"1px solid rgba(255,255,255,.12)"}}>Correlation</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...corrs].sort((a,b)=>Math.abs(b.corr||0)-Math.abs(a.corr||0)).map(r=>(
-                    <tr key={r.feature}>
-                      <td style={{padding:"8px 10px", borderBottom:"1px solid rgba(255,255,255,.06)"}}>{r.feature}</td>
-                      <td style={{padding:"8px 10px", borderBottom:"1px solid rgba(255,255,255,.06)", fontWeight:700, color:(r.corr??0)>0?yesColor:noColor}}>
-                        {r.corr?.toFixed(3) ?? "n/a"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <p className="hint" style={{marginTop:8}}>
-                Positive value means higher feature values associate with leaving; negative means the opposite.
-              </p>
-            </div>
-          </div>
-
-          {/* Income spread by role (five-number summary) */}
-          <div className="card" style={{gridColumn:"1 / -1"}}>
-            <div className="card-head" style={{paddingBottom:"0.5rem"}}><h3>Income spread by Job Role</h3></div>
-            <div className="card-body" style={{height:330}}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={boxIncome}>
-                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                  <XAxis dataKey="job_role" stroke={axisStroke}  tick={tickProps} />
-                  <YAxis stroke={axisStroke}  tick={tickProps} />
-                  <Tooltip contentStyle={tooltipStyle}
-                    formatter={(v, name)=>[v, ({min:"Min",q1:"Q1",median:"Median",q3:"Q3",max:"Max"}[name]||name)]} />
-                  <Legend />
-                  <Bar dataKey="min"    stackId="spread" fill={palette[0]} />
-                  <Bar dataKey="q1"     stackId="spread" fill={palette[1]} />
-                  <Bar dataKey="median" stackId="spread" fill={palette[2]} />
-                  <Bar dataKey="q3"     stackId="spread" fill={palette[3]} />
-                  <Bar dataKey="max"    stackId="spread" fill={palette[4]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* New viz #1: Attrition by Education Field */}
-          <div className="card" style={{display:"flex", flexDirection:"column"}}>
-            <div className="card-head" style={{paddingBottom:"0.5rem"}}><h3>Attrition by Education Field</h3></div>
-            <div className="card-body" style={{height:320}}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={eduByCount}>
-                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                  <XAxis dataKey="key" stroke={axisStroke}  tick={tickProps} />
-                  <YAxis stroke={axisStroke}  tick={tickProps} />
-                  <Tooltip contentStyle={tooltipStyle}  labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle}  cursor={{ fill: "rgba(255,255,255,0.08)" }} />
-                  <Bar dataKey="attrition_rate">
-                    {eduByCount.map((_,i)=>(<Cell key={i} fill={palette[(i+4)%palette.length]} />))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Satisfaction profile (radar) */}
-          
-
-
-          {/* New viz #2: Attrition by Business Travel */}
-          <div className="card" style={{display:"flex", flexDirection:"column"}}>
-            <div className="card-head" style={{paddingBottom:"0.5rem"}}><h3>Attrition by Business Travel</h3></div>
-            <div className="card-body" style={{height:320}}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={travelByCount}>
-                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                  <XAxis dataKey="key" stroke={axisStroke}  tick={tickProps} />
-                  <YAxis stroke={axisStroke}  tick={tickProps} />
-                  <Tooltip contentStyle={tooltipStyle}  labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle}  cursor={{ fill: "rgba(255,255,255,0.08)" }} />
-                  <Bar dataKey="attrition_rate">
-                    {travelByCount.map((_,i)=>(<Cell key={i} fill={palette[(i+6)%palette.length]} />))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
+          {/* You can add Gender pie here instead if you remove the top row */}
         </div>
+
+        {/* Scatter: Age vs Monthly Income (full width) */}
+        <div className="card" style={{gridColumn:"1 / -1", marginTop:12}}>
+          <div className="card-head"><h3>Age vs Monthly Income (colored by attrition)</h3></div>
+          <div className="card-body" style={{height:420}}>
+            <ResponsiveContainer width="100%" height="100%">
+              <ScatterChart>
+                <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                <XAxis type="number" dataKey="age" stroke={axisStroke} tick={tickProps} domain={[15, 'dataMax']} />
+                <YAxis type="number" dataKey="monthly_income" stroke={axisStroke} tick={tickProps} />
+                <ZAxis type="category" dataKey="left_flag" range={[70,70]} />
+                <Tooltip contentStyle={tooltipStyle}
+                  labelStyle={tooltipLabelStyle}
+                  itemStyle={tooltipItemStyle}
+                  cursor={{ fill: "rgba(255,255,255,0.08)" }}
+                  formatter={(v, name)=>[name==="monthly_income"?fmtCurrency(v):v, name==="monthly_income"?"Monthly Income":name==="age"?"Age":"Left?"]} />
+                <Legend />
+                <Scatter data={scatter.filter(d=>d.left_flag===1)} name="Left" fill={yesColor} />
+                <Scatter data={scatter.filter(d=>d.left_flag===0)} name="Stayed" fill={noColor} />
+              </ScatterChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Correlations — horizontal bar viz */}
+        <div className="card" style={{marginTop:12}}>
+          <div className="card-head"><h3>Correlation with Attrition (Yes=1, No=0)</h3></div>
+          <div className="card-body" style={{height:420}}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={[...(corrs||[])].sort((a,b)=>Math.abs(b.corr||0)-Math.abs(a.corr||0))} layout="vertical" margin={{ left: 160 }}>
+                <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" horizontal={true} vertical={false}/>
+                <XAxis type="number" stroke={axisStroke} tick={tickProps} domain={[-1,1]} />
+                <YAxis type="category" dataKey="feature" stroke={axisStroke} width={150} tick={tickProps} />
+                <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle}
+                  formatter={(v)=>[v?.toFixed(3) ?? "n/a", "Correlation"]} />
+                <Bar dataKey="corr">
+                  {[...(corrs||[])].sort((a,b)=>Math.abs(b.corr||0)-Math.abs(a.corr||0)).map((d,i)=>(
+                    <Cell key={i} fill={(d.corr??0)>=0 ? yesColor : noColor} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
       </div>
 
       <footer className="footer">
-        API: {import.meta.env.VITE_API_BASE}
+        © 2025 Rayan Bhatti — All rights reserved.
       </footer>
     </>
   );

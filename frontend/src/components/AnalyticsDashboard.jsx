@@ -32,7 +32,7 @@ function InfoTip() {
         <div className="infotip-pop">
           <div className="infotip-title">How attrition is calculated</div>
           <div className="infotip-body">
-            Attrition rate = <b>count(Attrition = “Yes”)</b> ÷ <b>total employees</b>. Example: <b>0.16 ≈ 16%</b> of employees left.
+            Attrition rate = <b>count(Attrition = “Yes”)</b> ÷ <b>total employees</b>. Example: <b>0.16 ≈ 16%</b>.
           </div>
           <div className="infotip-arrow" />
         </div>
@@ -149,6 +149,21 @@ export default function AnalyticsDashboard() {
   }, [boxIncome]);
   const maxIncome = useMemo(()=>incomeBoxData.reduce((m,d)=>Math.max(m,d.max||0),0),[incomeBoxData]);
 
+  // === NEW: clean, sorted series for the new charts ===
+  const attrVsMinIncSorted = useMemo(
+    () => (Array.isArray(attrVsMinInc) ? [...attrVsMinInc] : [])
+            .filter(d => Number.isFinite(+d.min_income) && Number.isFinite(+d.attrition_rate))
+            .sort((a,b)=> (+a.min_income) - (+b.min_income)),
+    [attrVsMinInc]
+  );
+
+  const attrByEmpIdxSorted = useMemo(
+    () => (Array.isArray(attrByEmpIdx) ? [...attrByEmpIdx] : [])
+            .filter(d => Number.isFinite(+d.idx) && (d.left_flag===0 || d.left_flag===1))
+            .sort((a,b)=> (+a.idx) - (+b.idx)),
+    [attrByEmpIdx]
+  );
+
   const insights = useMemo(() => {
     const topDept = deptTop3[0];
     const topRole = roleByRate[0];
@@ -254,46 +269,55 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
 
-        {/* Three-up row: REPLACED first two cards with new line charts */}
+        {/* Three-up row: new line charts + income per role */}
         <div className="grid three">
-          {/* 1) Attrition vs Minimum Income (line) */}
+          {/* 1) Attrition vs Minimum Income */}
           <div className="card">
             <div className="card-head"><h3>Attrition vs Minimum Income</h3></div>
             <div className="card-body" style={{height:280}}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={attrVsMinInc}>
-                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                  <XAxis dataKey="min_income" stroke={axisStroke} tick={tickProps} tickFormatter={(v)=>Intl.NumberFormat().format(v)} />
-                  <YAxis stroke={axisStroke} tick={tickProps} tickFormatter={fmtPct0} domain={[0, 'dataMax']} />
-                  <Tooltip
-                    contentStyle={tooltipStyle}
-                    labelStyle={tooltipLabelStyle}
-                    itemStyle={tooltipItemStyle}
-                    formatter={(v, n)=> n==="attrition_rate" ? fmtPct(v) : fmtCurrency(v)}
-                    labelFormatter={(v)=>`Min income: ${fmtCurrency(v)}`}
-                  />
-                  <Legend />
-                  <Line type="monotone" dataKey="attrition_rate" stroke={palette[6]} dot={false}/>
-                </LineChart>
-              </ResponsiveContainer>
+              {attrVsMinIncSorted.length === 0 ? (
+                <div className="empty-msg">No data returned from /api/line/attrition_vs_min_income.</div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={attrVsMinIncSorted}>
+                    <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                    <XAxis dataKey="min_income" stroke={axisStroke} tick={tickProps}
+                           tickFormatter={(v)=>Intl.NumberFormat().format(v)} />
+                    <YAxis stroke={axisStroke} tick={tickProps} tickFormatter={fmtPct0} domain={[0, 'dataMax']} />
+                    <Tooltip
+                      contentStyle={tooltipStyle}
+                      labelStyle={tooltipLabelStyle}
+                      itemStyle={tooltipItemStyle}
+                      formatter={(v, n)=> n==="attrition_rate" ? fmtPct(v) : fmtCurrency(v)}
+                      labelFormatter={(v)=>`Min income: ${fmtCurrency(v)}`}
+                    />
+                    <Legend />
+                    <Line type="monotone" dataKey="attrition_rate" stroke={palette[6]} dot={false}/>
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
 
-          {/* 2) Attrition (0/1) over Employee Number (line) */}
+          {/* 2) Attrition by Employee Number — numeric Y axis (0/1) */}
           <div className="card">
             <div className="card-head"><h3>Attrition by Employee Number</h3></div>
             <div className="card-body" style={{height:280}}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={attrByEmpIdx}>
-                  <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                  <XAxis dataKey="idx" stroke={axisStroke} tick={tickProps} />
-                  <YAxis stroke={axisStroke} tick={tickProps} domain={[0,1]} tickFormatter={(v)=>v===1?"Yes":v===0?"No":v}/>
-                  <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle}
-                           formatter={(v)=>v===1?"Yes (left)":"No (stayed)"} labelFormatter={(v)=>`Employee #${v}`} />
-                  <Legend />
-                  <Line type="stepAfter" dataKey="left_flag" stroke={palette[1]} dot={false}/>
-                </LineChart>
-              </ResponsiveContainer>
+              {attrByEmpIdxSorted.length === 0 ? (
+                <div className="empty-msg">No data returned from /api/line/attrition_by_employee_index.</div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={attrByEmpIdxSorted}>
+                    <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
+                    <XAxis dataKey="idx" stroke={axisStroke} tick={tickProps} />
+                    <YAxis stroke={axisStroke} tick={tickProps} domain={[0,1]} ticks={[0,1]} />
+                    <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle}
+                             formatter={(v)=>v} labelFormatter={(v)=>`Employee #${v}`} />
+                    <Legend />
+                    <Line type="stepAfter" dataKey="left_flag" stroke={palette[1]} dot={false}/>
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
 
@@ -323,7 +347,7 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
 
-        {/* Scatter: Age vs Monthly Income (kept) */}
+        {/* Scatter: Age vs Monthly Income */}
         <div className="card" style={{gridColumn:"1 / -1", marginTop:12}}>
           <div className="card-head"><h3>Age vs Monthly Income (colored by attrition)</h3></div>
           <div className="card-body" style={{height:420}}>
@@ -333,7 +357,9 @@ export default function AnalyticsDashboard() {
                 <XAxis type="number" dataKey="age" stroke={axisStroke} tick={tickProps} domain={[15, 'dataMax']} />
                 <YAxis type="number" dataKey="monthly_income" stroke={axisStroke} tick={tickProps} />
                 <ZAxis type="category" dataKey="left_flag" range={[70,70]} />
-                <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle}
+                <Tooltip contentStyle={tooltipStyle}
+                  labelStyle={tooltipLabelStyle}
+                  itemStyle={tooltipItemStyle}
                   cursor={{ fill: "rgba(255,255,255,0.08)" }}
                   formatter={(v, name)=>[name==="monthly_income"?fmtCurrency(v):v, name==="monthly_income"?"Monthly Income":name==="age"?"Age":"Left?"]} />
                 <Legend />

@@ -2,10 +2,12 @@
 import os
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
-from .db import run_query  # uses DATABASE_URL from env
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import HTTPException
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from .db import run_query
 
 app = FastAPI()
 
@@ -61,15 +63,26 @@ def attrition_by(dim: str = Query(..., description="One of: " + ", ".join(sorted
 
 @app.get("/api/distribution/age")
 def age_hist(buckets: int = 9, min_age: int = 18, max_age: int = 60):
+    # Basic param validation to avoid Postgres errors
+    if buckets <= 0:
+        raise HTTPException(status_code=400, detail="buckets must be > 0")
+    if min_age >= max_age:
+        raise HTTPException(status_code=400, detail="min_age must be < max_age")
+
     sql = """
-    SELECT width_bucket(age, :min_age, :max_age, :buckets) AS bucket,
-           MIN(age) AS min_age,
-           MAX(age) AS max_age,
-           COUNT(*) AS n,
-           ROUND(AVG(CASE WHEN attrition='Yes' THEN 1 ELSE 0 END)::numeric, 4) AS attrition_rate
+    SELECT
+        width_bucket(age, :min_age, :max_age, :buckets) AS bucket,
+        MIN(age) AS min_age,
+        MAX(age) AS max_age,
+        COUNT(*) AS n,
+        ROUND(AVG(CASE WHEN attrition='Yes' THEN 1 ELSE 0 END)::numeric, 4) AS attrition_rate
     FROM hr_employees_v
     WHERE age IS NOT NULL
     GROUP BY bucket
     ORDER BY bucket;
     """
-    return run_query(sql, {"min_age": min_age, "max_age": max_age, "buckets": buckets})
+    try:
+        return run_query(sql, {"min_age": min_age, "max_age": max_age, "buckets": buckets})
+    except SQLAlchemyError as e:
+        # Surface the DB error message to the client (useful for prod debugging)
+        raise HTTPException(status_code=500, detail=f"DB error: {e.__class__.__name__}: {e}")

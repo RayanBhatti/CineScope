@@ -66,7 +66,7 @@ body{
   padding:12px 12px 24px;
 }
 .grid{
-  display:grid; gap:14px;
+  display:grid; gap:12px;
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
 }
 
@@ -78,7 +78,7 @@ body{
   display:flex; flex-direction:column;
 }
 .card-head{ padding:12px 14px; border-bottom:1px dashed rgba(255,255,255,.08) }
-.card-head h3{ margin:0; font-size:16px; font-weight:700; letter-spacing:.2px }
+.card-head h3{ margin:0; font-size:16px; font-weight:700; letter-spacing:.2px; line-height:1.25 }
 .card-body{ padding:12px 14px; }
 
 /* KPI row */

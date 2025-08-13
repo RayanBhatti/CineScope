@@ -296,3 +296,21 @@ def attrition_by_employee_index():
     FROM hr_employees_v;
     """
     return run_query(sql)
+
+@app.get("/api/line/attrition_by_job_satisfaction")
+def attrition_by_job_satisfaction():
+    """
+    Returns rows like:
+      { job_satisfaction: 1..4, n: count, attrition_rate: 0..1 }
+    """
+    sql = """
+    SELECT
+      job_satisfaction::int AS job_satisfaction,
+      COUNT(*) AS n,
+      ROUND(AVG(CASE WHEN attrition='Yes' THEN 1 ELSE 0 END)::numeric, 4) AS attrition_rate
+    FROM hr_employees_v
+    WHERE job_satisfaction IS NOT NULL
+    GROUP BY job_satisfaction
+    ORDER BY job_satisfaction;
+    """
+    return run_query(sql)

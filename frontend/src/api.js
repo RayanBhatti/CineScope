@@ -23,10 +23,6 @@ export const endpoints = {
   byOvertime: () => by("over_time"),
   byTwoDeptOT: () => getJSON(`${API_BASE}/api/attrition/by_two?dim1=department&dim2=over_time`),
 
-  attritionVsMinIncome: (b = 30) =>
-    getJSON(`${API_BASE}/api/line/attrition_vs_min_income?buckets=${b}`),
-  attritionByEmployeeIndex: () =>
-    getJSON(`${API_BASE}/api/line/attrition_by_employee_index`),
   ageHist: (b=12, lo=18, hi=60) =>
     getJSON(`${API_BASE}/api/distribution/age?buckets=${b}&min_age=${lo}&max_age=${hi}`),
 
@@ -47,6 +43,6 @@ export const endpoints = {
   attritionVsMinIncome: (buckets = 30) =>
     getJSON(`${API_BASE}/api/line/attrition_vs_min_income?buckets=${buckets}`),
 
-  attritionByEmployeeIndex: () =>
-    getJSON(`${API_BASE}/api/line/attrition_by_employee_index`),
+  attritionByJobSatisfaction: () =>
+    getJSON(`${API_BASE}/api/line/attrition_by_job_satisfaction`),
 };

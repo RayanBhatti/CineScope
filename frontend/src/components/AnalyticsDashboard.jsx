@@ -6,6 +6,7 @@ import {
   LineChart, Line, ScatterChart, Scatter, ZAxis,
   PieChart, Pie, Legend, Cell
 } from "recharts";
+import { FaGithub } from "react-icons/fa";
 
 const tooltipStyle = { background: "var(--tooltip-bg)", border: "1px solid var(--tooltip-bd)", color: textColor };
 const tooltipLabelStyle = { color: textColor };
@@ -76,9 +77,9 @@ export default function AnalyticsDashboard() {
   const [scatter, setScatter] = useState([]);
   const [boxIncome, setBoxIncome] = useState([]);
 
-  // NEW series
-  const [attrVsMinInc, setAttrVsMinInc] = useState([]);  // {min_income, attrition_rate}
-  const [attrByEmpIdx, setAttrByEmpIdx] = useState([]);  // {idx, left_flag}
+  // Line series
+  const [attrVsMinInc, setAttrVsMinInc] = useState([]);           // {min_income, attrition_rate}
+  const [attrByJobSat, setAttrByJobSat] = useState([]);           // {job_satisfaction, n, attrition_rate}
 
   useEffect(() => {
     let cancelled = false;
@@ -92,8 +93,8 @@ export default function AnalyticsDashboard() {
           endpoints.genderPie().then(setGender),
           endpoints.scatter(1200).then(setScatter),
           endpoints.boxIncome().then(setBoxIncome),
-          endpoints.attritionVsMinIncome(30).then(setAttrVsMinInc),   // NEW
-          endpoints.attritionByEmployeeIndex().then(setAttrByEmpIdx), // NEW
+          endpoints.attritionVsMinIncome(30).then(setAttrVsMinInc),
+          endpoints.attritionByJobSatisfaction().then(setAttrByJobSat),
         ]);
         if (cancelled) return;
       } catch (e) {
@@ -149,6 +150,7 @@ export default function AnalyticsDashboard() {
   }, [boxIncome]);
   const maxIncome = useMemo(()=>incomeBoxData.reduce((m,d)=>Math.max(m,d.max||0),0),[incomeBoxData]);
 
+  // NEW: clean series
   const attrVsMinIncSorted = useMemo(
     () => (Array.isArray(attrVsMinInc) ? [...attrVsMinInc] : [])
             .filter(d => Number.isFinite(+d.min_income) && Number.isFinite(+d.attrition_rate))
@@ -156,79 +158,83 @@ export default function AnalyticsDashboard() {
     [attrVsMinInc]
   );
 
-  const attrByEmpIdxSorted = useMemo(
-    () => (Array.isArray(attrByEmpIdx) ? [...attrByEmpIdx] : [])
-            .filter(d => Number.isFinite(+d.idx) && (d.left_flag===0 || d.left_flag===1))
-            .sort((a,b)=> (+a.idx) - (+b.idx)),
-    [attrByEmpIdx]
+  const jobSatSorted = useMemo(
+    () => (Array.isArray(attrByJobSat) ? [...attrByJobSat] : [])
+            .filter(d => Number.isFinite(+d.job_satisfaction) && Number.isFinite(+d.attrition_rate))
+            .sort((a,b)=> (+a.job_satisfaction) - (+b.job_satisfaction)),
+    [attrByJobSat]
   );
 
-// --- Key Insights (4 bubbles) ---
-const insights = useMemo(() => {
-  const overall = summary?.attrition_rate ?? null;
+  // --- Key Insights (4 bubbles) ---
+  const insights = useMemo(() => {
+    const overall = summary?.attrition_rate ?? null;
 
-  const deptSorted = (dept || [])
-    .map(d => ({
-      key: pick(d?.k1, d?.key, d?.department, d?.Department, d?.name, "Unknown"),
-      rate: Number(pick(d?.attrition_rate, d?.rate, d?.value, d?.attritionRate, 0)) || 0
-    }))
-    .sort((a,b)=> b.rate - a.rate);
+    const deptSorted = (dept || [])
+      .map(d => ({
+        key: pick(d?.k1, d?.key, d?.department, d?.Department, d?.name, "Unknown"),
+        rate: Number(pick(d?.attrition_rate, d?.rate, d?.value, d?.attritionRate, 0)) || 0
+      }))
+      .sort((a,b)=> b.rate - a.rate);
 
-  const roleSorted = (role || [])
-    .map(d => ({
-      key: pick(d?.k1, d?.key, d?.job_role, d?.Role, d?.name, "Unknown"),
-      rate: Number(pick(d?.attrition_rate, d?.rate, d?.value, d?.attritionRate, 0)) || 0
-    }))
-    .sort((a,b)=> b.rate - a.rate);
+    const roleSorted = (role || [])
+      .map(d => ({
+        key: pick(d?.k1, d?.key, d?.job_role, d?.Role, d?.name, "Unknown"),
+        rate: Number(pick(d?.attrition_rate, d?.rate, d?.value, d?.attritionRate, 0)) || 0
+      }))
+      .sort((a,b)=> b.rate - a.rate);
 
-  // gender majority (by count)
-  const g = Array.isArray(gender) ? gender : [];
-  const tot = g.reduce((s, x) => s + (Number(pick(x?.n, x?.count, x?.value, 0)) || 0), 0);
-  const maj = g
-    .map(x => ({
-      label: pick(x?.gender, x?.k1, x?.name, "Unknown"),
-      n: Number(pick(x?.n, x?.count, x?.value, 0)) || 0
-    }))
-    .sort((a,b)=> b.n - a.n)[0];
-  const majPct = tot ? `${Math.round((maj?.n || 0) * 100 / tot)}%` : null;
+    // gender majority (by count)
+    const g = Array.isArray(gender) ? gender : [];
+    const tot = g.reduce((s, x) => s + (Number(pick(x?.n, x?.count, x?.value, 0)) || 0), 0);
+    const maj = g
+      .map(x => ({
+        label: pick(x?.gender, x?.k1, x?.name, "Unknown"),
+        n: Number(pick(x?.n, x?.count, x?.value, 0)) || 0
+      }))
+      .sort((a,b)=> b.n - a.n)[0];
+    const majPct = tot ? `${Math.round((maj?.n || 0) * 100 / tot)}%` : null;
 
-  return [
-    {
-      label: "Overall attrition rate",
-      text: overall != null ? `${(overall * 100).toFixed(1)}%` : "—",
-    },
-    {
-      label: "Highest attrition department",
-      text: deptSorted[0] ? `${deptSorted[0].key} (${(deptSorted[0].rate*100).toFixed(1)}%)` : "—",
-    },
-    {
-      label: "Highest attrition role",
-      text: roleSorted[0] ? `${roleSorted[0].key} (${(roleSorted[0].rate*100).toFixed(1)}%)` : "—",
-    },
-    {
-      label: "Gender majority",
-      text: maj ? `${maj.label} (${majPct ?? "—"})` : "—",
-    },
-  ];
-}, [summary, dept, role, gender]);
-
+    return [
+      {
+        label: "Overall attrition rate",
+        text: overall != null ? `${(overall * 100).toFixed(1)}%` : "—",
+      },
+      {
+        label: "Highest attrition department",
+        text: deptSorted[0] ? `${deptSorted[0].key} (${(deptSorted[0].rate*100).toFixed(1)}%)` : "—",
+      },
+      {
+        label: "Highest attrition role",
+        text: roleSorted[0] ? `${roleSorted[0].key} (${(roleSorted[0].rate*100).toFixed(1)}%)` : "—",
+      },
+      {
+        label: "Gender majority",
+        text: maj ? `${maj.label} (${majPct ?? "—"})` : "—",
+      },
+    ];
+  }, [summary, dept, role, gender]);
 
   return (
     <>
       <div className="container">
         <header className="header">
           <h1 className="title">CineScope Dashboard</h1>
-          <p className="subtitle">HR ATTRITION ANALYTICS <InfoTip /></p>
+          <p className="subtitle">
+            HR ATTRITION ANALYTICS <InfoTip />
+          </p>
           <div className="source inline">
-            <a className="btn btn-github" href="https://github.com/RayanBhatti/CineScope" target="_blank" rel="noreferrer">
-              <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" style={{marginRight:8}}>
-                <path fill="currentColor" d="M8 .2a8 8 0 0 0-2.53 15.6c.4.07.55-.17.55-.38v-1.33c-2.25.49-2.73-1.08-2.73-1.08-.36-.9-.88-1.14-.88-1.14-.72-.49.06-.48.06-.48.79.06 1.2.82 1.2.82.71 1.21 1.86.86 2.31.66.07-.52.28-.86.51-1.06-1.8-.2-3.69-.9-3.69-4a3.15 3.15 0 0 1 .84-2.18c-.08-.2-.37-1.01.08-2.1 0 0 .69-.22 2.25.83a7.78 7.78 0 0 1 4.1 0c1.56-1.05 2.24-.83 2.24-.83.45 1.09.16 1.9.08 2.1.53.59.84 1.34.84 2.18 0 3.11-1.9 3.79-3.71 3.99.29.25.54.73.54 1.48v2.2c0 .21.14.46.55.38A8 8 0 0 0 8 .2Z"/>
-              </svg>
+            <a
+              className="btn btn-github"
+              href="https://github.com/RayanBhatti/CineScope"
+              target="_blank"
+              rel="noreferrer"
+              style={{ display: "flex", alignItems: "center", background: "transparent", color: "#007bff" }}
+            >
+              <FaGithub size={32} style={{ marginRight: 8,color: "#007bff" }} />
               View Source Code
             </a>
           </div>
         </header>
-
         {/* KPIs */}
         <div className="card" style={{marginBottom:14}}>
           <div className="card-head" style={{paddingBottom:"0.5rem"}}><h3>Overview</h3></div>
@@ -241,7 +247,7 @@ const insights = useMemo(() => {
           </div>
         </div>
 
-        {/* Insights */}
+        {/* Key Insights */}
         <div className="card" style={{ marginBottom: 14 }}>
           <div className="card-head"><h3>Key Insights</h3></div>
           <div className="card-body">
@@ -309,7 +315,7 @@ const insights = useMemo(() => {
           </div>
         </div>
 
-        {/* Three-up row: new line charts + income per role */}
+        {/* Three-up row: 1) Attrition vs Min Income, 2) Attrition vs Job Satisfaction, 3) Income per Role */}
         <div className="grid three">
           {/* 1) Attrition vs Minimum Income */}
           <div className="card">
@@ -339,22 +345,33 @@ const insights = useMemo(() => {
             </div>
           </div>
 
-          {/* 2) Attrition by Employee Number — numeric Y axis (0/1) */}
+          {/* 2) NEW: Attrition vs Job Satisfaction */}
           <div className="card">
-            <div className="card-head"><h3>Attrition by Employee Number</h3></div>
+            <div className="card-head"><h3>Attrition vs Job Satisfaction</h3></div>
             <div className="card-body" style={{height:280}}>
-              {attrByEmpIdxSorted.length === 0 ? (
-                <div className="empty-msg">No data returned from /api/line/attrition_by_employee_index.</div>
+              {jobSatSorted.length === 0 ? (
+                <div className="empty-msg">No data returned from /api/line/attrition_by_job_satisfaction.</div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={attrByEmpIdxSorted}>
+                  <LineChart data={jobSatSorted}>
                     <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" />
-                    <XAxis dataKey="idx" stroke={axisStroke} tick={tickProps} />
-                    <YAxis stroke={axisStroke} tick={tickProps} domain={[0,1]} ticks={[0,1]} />
-                    <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle}
-                             formatter={(v)=>v} labelFormatter={(v)=>`Employee #${v}`} />
+                    <XAxis
+                      dataKey="job_satisfaction"
+                      stroke={axisStroke}
+                      tick={tickProps}
+                      ticks={[1,2,3,4]}
+                      tickFormatter={(v)=>({1:"1 (Low)",2:"2",3:"3",4:"4 (High)"}[v] ?? v)}
+                    />
+                    <YAxis stroke={axisStroke} tick={tickProps} tickFormatter={fmtPct0} domain={[0, 'dataMax']} />
+                    <Tooltip
+                      contentStyle={tooltipStyle}
+                      labelStyle={tooltipLabelStyle}
+                      itemStyle={tooltipItemStyle}
+                      formatter={(v, n)=> n==="attrition_rate" ? fmtPct(v) : v}
+                      labelFormatter={(v)=>`Job satisfaction: ${v}`}
+                    />
                     <Legend />
-                    <Line type="stepAfter" dataKey="left_flag" stroke={palette[1]} dot={false}/>
+                    <Line type="monotone" dataKey="attrition_rate" stroke={palette[5]} dot />
                   </LineChart>
                 </ResponsiveContainer>
               )}

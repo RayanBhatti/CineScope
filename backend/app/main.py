@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Literal, List
+from typing import List
 import os
 
 from .db import run_query
@@ -20,7 +20,7 @@ app.add_middleware(
     allow_credentials=False,
 )
 
-# --- Health Check ------------------------------------------------------------
+# --- Health (kept, harmless + useful) ----------------------------------------
 @app.get("/api/health")
 def health():
     try:
@@ -74,14 +74,17 @@ def age_hist(buckets: int = 9, min_age: int = 18, max_age: int = 60):
     GROUP BY bucket
     ORDER BY bucket;
     """
-    return run_query(sql, {"min_age": min_age, "max_age": max_age, "buckets": buckets},
-                     cache_key=f"age_hist_{buckets}_{min_age}_{max_age}")
+    params = {"min_age": min_age, "max_age": max_age, "buckets": buckets}
+    return run_query(sql, params, cache_key=f"age_hist_{buckets}_{min_age}_{max_age}")
 
-# --- Income Histogram --------------------------------------------------------
+# --- Monthly income histogram (used by frontend in some views) ---------------
 @app.get("/api/distribution/monthly_income")
 def income_hist(buckets: int = 20):
-    bounds = run_query("SELECT MIN(monthly_income) AS lo, MAX(monthly_income) AS hi FROM hr_employees_v WHERE monthly_income IS NOT NULL",
-                       cache_key="income_bounds")[0]
+    bounds = run_query(
+        "SELECT MIN(monthly_income) AS lo, MAX(monthly_income) AS hi "
+        "FROM hr_employees_v WHERE monthly_income IS NOT NULL",
+        cache_key="income_bounds"
+    )[0]
     lo, hi = bounds["lo"], bounds["hi"]
     sql = """
     SELECT width_bucket(monthly_income, :lo, :hi, :buckets) AS bucket,
@@ -96,7 +99,7 @@ def income_hist(buckets: int = 20):
     """
     return run_query(sql, {"lo": lo, "hi": hi, "buckets": buckets}, cache_key=f"income_hist_{buckets}")
 
-# --- Tenure ------------------------------------------------------------------
+# --- Tenure curve ------------------------------------------------------------
 @app.get("/api/attrition/tenure_curve")
 def tenure_curve(max_years: int = 40):
     sql = """
@@ -111,7 +114,7 @@ def tenure_curve(max_years: int = 40):
     """
     return run_query(sql, {"max_years": max_years}, cache_key=f"tenure_curve_{max_years}")
 
-# --- Two-way breakdown -------------------------------------------------------
+# --- Two-way breakdown (dept x overtime etc) --------------------------------
 @app.get("/api/attrition/by_two")
 def attrition_by_two(dim1: str, dim2: str):
     if dim1 not in ALLOWED_DIMS or dim2 not in ALLOWED_DIMS:
@@ -128,7 +131,7 @@ def attrition_by_two(dim1: str, dim2: str):
     """
     return run_query(sql, cache_key=f"attrition_by_two_{dim1}_{dim2}")
 
-# --- Correlations ------------------------------------------------------------
+# --- Correlations (numeric features) ----------------------------------------
 NUMERIC_COLS: List[str] = [
     "age","daily_rate","distance_from_home","education","environment_satisfaction",
     "hourly_rate","job_involvement","job_level","job_satisfaction","monthly_income",
@@ -150,9 +153,10 @@ def correlation_numeric():
         """
         res = run_query(sql, cache_key=f"corr_{col}")[0]
         rows.append(res)
+    # sort client-ready
     return sorted(rows, key=lambda r: (r["corr"] is None, abs(r["corr"] or 0)), reverse=True)
 
-# --- Boxplot Income by Role --------------------------------------------------
+# --- Box-plot stats (income by role) ----------------------------------------
 @app.get("/api/boxplot/income_by_role")
 def income_box_by_role():
     sql = """
@@ -169,7 +173,7 @@ def income_box_by_role():
     """
     return run_query(sql, cache_key="income_by_role")
 
-# --- Scatter Age vs Income ---------------------------------------------------
+# --- Scatter: Age vs Income --------------------------------------------------
 @app.get("/api/scatter/age_income")
 def scatter_age_income(limit: int = 1000):
     sql = """
@@ -183,7 +187,7 @@ def scatter_age_income(limit: int = 1000):
     """
     return run_query(sql, {"limit": limit}, cache_key=f"scatter_age_income_{limit}")
 
-# --- Radar Satisfaction ------------------------------------------------------
+# --- Radar-friendly satisfaction profile ------------------------------------
 @app.get("/api/radar/satisfaction")
 def radar_satisfaction():
     sql = """
@@ -199,7 +203,7 @@ def radar_satisfaction():
     """
     return run_query(sql, cache_key="radar_satisfaction")
 
-# --- Gender Pie --------------------------------------------------------------
+# --- Gender pie --------------------------------------------------------------
 @app.get("/api/pie/gender")
 def gender_pie():
     sql = """
@@ -211,3 +215,43 @@ def gender_pie():
     ORDER BY n DESC;
     """
     return run_query(sql, cache_key="gender_pie")
+
+# Attrition vs Minimum Income =================================
+@app.get("/api/line/attrition_vs_min_income")
+def attrition_vs_min_income(buckets: int = 20):
+    # bounds cached separately
+    bounds = run_query(
+        "SELECT MIN(monthly_income) AS lo, MAX(monthly_income) AS hi "
+        "FROM hr_employees_v WHERE monthly_income IS NOT NULL",
+        cache_key="income_bounds"
+    )[0]
+    lo, hi = bounds["lo"], bounds["hi"]
+    # group by min-income bucket and compute attrition rate
+    sql = """
+    SELECT bkt AS bucket,
+           MIN(monthly_income) AS min_income,
+           COUNT(*) FILTER (WHERE attrition='Yes')::float / NULLIF(COUNT(*),0) AS attrition_rate
+    FROM (
+      SELECT width_bucket(monthly_income, :lo, :hi, :buckets) AS bkt,
+             monthly_income, attrition
+      FROM hr_employees_v
+      WHERE monthly_income IS NOT NULL
+    ) s
+    GROUP BY bkt
+    ORDER BY bkt;
+    """
+    params = {"lo": lo, "hi": hi, "buckets": buckets}
+    return run_query(sql, params, cache_key=f"attr_vs_min_income_{buckets}")
+
+# Attrition by Job Satisfaction ===============================
+@app.get("/api/line/attrition_by_job_satisfaction")
+def attrition_by_job_satisfaction():
+    sql = """
+    SELECT job_satisfaction,
+           COUNT(*) FILTER (WHERE attrition='Yes')::float / NULLIF(COUNT(*),0) AS attrition_rate
+    FROM hr_employees_v
+    WHERE job_satisfaction IS NOT NULL
+    GROUP BY job_satisfaction
+    ORDER BY job_satisfaction;
+    """
+    return run_query(sql, cache_key="attr_by_job_sat")
